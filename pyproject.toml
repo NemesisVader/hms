@@ -1,0 +1,18 @@
+[project]
+name = "hms-23f2004203"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "celery>=5.5.3",
+    "flask>=3.1.2",
+    "flask-cors>=6.0.1",
+    "flask-jwt-extended>=4.7.1",
+    "flask-login>=0.6.3",
+    "flask-migrate>=4.1.0",
+    "flask-wtf>=1.2.2",
+    "python-dotenv>=1.1.1",
+    "redis>=6.4.0",
+    "sqlalchemy>=2.0.44",
+]
