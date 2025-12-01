@@ -1,4 +1,5 @@
 from ..extensions import db
+from sqlalchemy.orm import relationship
 
 class Patient(db.Model):
     __tablename__ = "patients"
@@ -11,3 +12,6 @@ class Patient(db.Model):
 
     phone = db.Column(db.String(15))
     address = db.Column(db.String(200))
+
+    # Relationship to User
+    user = relationship("User", backref="patient", uselist=False)
