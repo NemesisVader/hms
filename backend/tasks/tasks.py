@@ -21,30 +21,80 @@ def send_daily_reminders():
         from ..extensions import db
         from ..models.appointment import Appointment
         from ..models.patient import Patient
+        from ..models.doctor import Doctor
         from ..models.user import User
+        from ..models.treatment import Treatment
 
         today_str = str(date.today())
-        appts = Appointment.query.filter(Appointment.date == today_str).all()
+
+        # ── 1. Appointment reminders (Booked only) ──────────────────────────
+        appts = Appointment.query.filter(
+            Appointment.date == today_str,
+            Appointment.status == "Booked"
+        ).all()
 
         for appt in appts:
             patient = Patient.query.get(appt.patient_id)
             if not patient:
                 continue
-
             user = User.query.get(patient.user_id)
             if not user:
                 continue
+            doctor = Doctor.query.get(appt.doctor_id)
+            doc_user = User.query.get(doctor.user_id) if doctor else None
+            doctor_name = f"Dr. {doc_user.username}" if doc_user else "your doctor"
 
-            message = (
-                f"*Hospital Appointment Reminder*\n"
+            send_google_chat_message(
+                f"🏥 *Hospital Appointment Reminder*\n"
                 f"Hello *{user.username}*,\n"
-                f"You have an appointment today at *{appt.time}*.\n"
+                f"You have an appointment today at *{appt.time}* with *{doctor_name}*.\n"
                 f"Please reach the hospital on time."
             )
 
-            send_google_chat_message(message)
+        # ── 2. Cancelled follow-up nudges (G-Chat only, not on frontend) ─────
+        cancelled_followups = (
+            db.session.query(Treatment, Appointment, Doctor, User)
+            .join(Appointment, Treatment.appointment_id == Appointment.id)
+            .join(Doctor, Appointment.doctor_id == Doctor.id)
+            .join(User, Doctor.user_id == User.id)
+            .filter(
+                Treatment.next_visit != None,
+                Treatment.next_visit >= today_str,
+            )
+            .all()
+        )
 
-        return {"count": len(appts)}
+        for treat, orig_appt, doc, doc_user in cancelled_followups:
+            # Find a follow-up appointment that was cancelled
+            cancelled = Appointment.query.filter(
+                Appointment.patient_id == orig_appt.patient_id,
+                Appointment.doctor_id == doc.id,
+                Appointment.date >= treat.next_visit,
+                Appointment.id != orig_appt.id,
+                Appointment.status == "Cancelled"
+            ).first()
+
+            if not cancelled:
+                continue
+
+            patient = Patient.query.get(orig_appt.patient_id)
+            if not patient:
+                continue
+            patient_user = User.query.get(patient.user_id)
+            if not patient_user:
+                continue
+
+            send_google_chat_message(
+                f"⚠️ *Cancelled Follow-up Reminder*\n"
+                f"Hello *{patient_user.username}*,\n"
+                f"You had a follow-up scheduled with *Dr. {doc_user.username}* "
+                f"on *{treat.next_visit}* (for: _{treat.diagnosis}_) that was cancelled.\n"
+                f"Please rebook your appointment at your earliest convenience."
+            )
+
+        return {"reminders": len(appts)}
+
+
 
 
 
@@ -204,16 +254,25 @@ def export_treatments(patient_id):
         from ..models.treatment import Treatment
 
         patient = Patient.query.get(patient_id)
+        if not patient:
+            return {"error": "Patient not found"}
+
         user = User.query.get(patient.user_id)
+        if not user:
+            return {"error": "User not found"}
 
         appts = Appointment.query.filter_by(patient_id=patient.id).order_by(
             Appointment.date.desc()
         ).all()
 
-        os.makedirs("exports", exist_ok=True)
-        filename = f"exports/treatment_export_{patient.id}.csv"
+        # Absolute path so this works no matter where the worker is started from
+        exports_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "exports")
+        )
+        os.makedirs(exports_dir, exist_ok=True)
+        filename = os.path.join(exports_dir, f"treatment_export_{patient.id}.csv")
 
-        with open(filename, "w", newline="") as f:
+        with open(filename, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([
                 "User ID", "Username", "Consulting Doctor",
@@ -240,7 +299,7 @@ def export_treatments(patient_id):
                 ])
 
         send_google_chat_message(
-            f"📁 CSV Export Ready for {user.username}\nFile saved at: {filename}"
+            f"📁 CSV Export Ready for {user.username}\nFile: {filename}"
         )
 
         return {"file": filename, "status": "done"}
