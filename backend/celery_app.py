@@ -2,12 +2,13 @@ from celery import Celery
 from celery.schedules import crontab
 from .config import Config
 
+
 def make_celery():
     celery = Celery(
         "hospital_celery",
         broker=Config.CELERY_BROKER_URL,
         backend=Config.CELERY_RESULT_BACKEND,
-        include=["backend.tasks.tasks"]   # auto import tasks
+        include=["backend.tasks.tasks"]
     )
 
     celery.conf.update(
@@ -19,7 +20,6 @@ def make_celery():
         broker_connection_retry_on_startup=True,
     )
 
-    # Celery Beat Schedule
     celery.conf.beat_schedule = {
         "daily-reminder-task": {
             "task": "tasks.send_daily_reminders",
@@ -35,6 +35,7 @@ def make_celery():
 
 
 celery = make_celery()
+
 
 def get_celery_app():
     return celery

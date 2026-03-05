@@ -9,24 +9,19 @@ from .utils.errors import register_error_handlers
 
 
 def create_app():
-    # Load environment variables
     load_dotenv()
 
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Enable CORS
     CORS(app)
 
-    # Initialize extensions
     db.init_app(app)
     cache.init_app(app)
     migrate.init_app(app, db)
 
-    # Initialize JWT
     jwt = JWTManager(app)
 
-    # Register blueprints
     from .routes.auth_routes import auth_bp
     from .routes.admin_routes import admin_bp
     from .routes.doctor_routes import doctor_bp
@@ -37,7 +32,6 @@ def create_app():
     app.register_blueprint(doctor_bp, url_prefix="/doctor")
     app.register_blueprint(patient_bp, url_prefix="/patient")
 
-    # register global error handlers
     register_error_handlers(app)
 
     return app

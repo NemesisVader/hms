@@ -7,6 +7,7 @@ from ..utils.auth import hash_password, verify_password
 
 auth_bp = Blueprint("auth", __name__)
 
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
@@ -61,9 +62,8 @@ def register():
     hashed = hash_password(password)
     user = User(username=username, password=hashed, role="patient")
     db.session.add(user)
-    db.session.flush()  # get user.id before commit
+    db.session.flush()
 
-    # create patient profile row
     patient = Patient(user_id=user.id, age=age or 0, gender=gender or "", phone=phone, address=address)
     db.session.add(patient)
     db.session.commit()

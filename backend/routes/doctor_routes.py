@@ -10,18 +10,17 @@ from datetime import date, timedelta
 
 doctor_bp = Blueprint("doctor", __name__)
 
+
 def get_current_doctor():
     user_id = int(get_jwt_identity())
     doctor = Doctor.query.filter_by(user_id=user_id).first()
     return doctor
 
 
-# GET DOCTOR'S OWN AVAILABILITY
 @doctor_bp.route("/availability", methods=["GET"])
 @jwt_required()
 @role_required("doctor")
 def get_availability():
-    """Doctor views their own availability"""
     doctor = get_current_doctor()
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
@@ -31,12 +30,10 @@ def get_availability():
     })
 
 
-# SET DOCTOR'S OWN AVAILABILITY
 @doctor_bp.route("/availability", methods=["PUT"])
 @jwt_required()
 @role_required("doctor")
 def set_availability():
-    """Doctor sets their own availability for the next 7 days"""
     doctor = get_current_doctor()
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
@@ -50,11 +47,9 @@ def set_availability():
     if not isinstance(availability, dict):
         return {"msg": "availability must be a JSON object (dict)"}, 400
 
-    # Update doctor's availability
     doctor.availability = availability
     db.session.commit()
 
-    # Invalidate caches
     from ..utils.cache import cache_delete
     cache_delete(f"availability:{doctor.id}")
     cache_delete("doctors_list")
@@ -64,9 +59,6 @@ def set_availability():
         "msg": "Availability updated successfully",
         "availability": doctor.availability
     })
-
-
-# TODAY APPOINTMENTS
 
 
 @doctor_bp.route("/appointments/today", methods=["GET"])
@@ -110,7 +102,6 @@ def doctor_today():
 
     return jsonify(data)
 
-# WEEK APPOINTMENTS
 
 @doctor_bp.route("/appointments/week", methods=["GET"])
 @jwt_required()
@@ -155,7 +146,6 @@ def doctor_week():
 
     return jsonify(data)
 
-#  ALL APPOINTMENTS
 
 @doctor_bp.route("/appointments", methods=["GET"])
 @jwt_required()
@@ -195,7 +185,6 @@ def doctor_all():
 
     return jsonify(data)
 
-# UPDATE APPT STATUS
 
 @doctor_bp.route("/appointments/<int:appt_id>/status", methods=["PUT"])
 @jwt_required()
@@ -218,11 +207,10 @@ def doctor_update_status(appt_id):
     appt.status = new_status
     db.session.commit()
 
-    # Trigger action: Notify system of status change
     from ..utils.notifications import send_google_chat_message
     from ..models.patient import Patient
     from ..models.user import User
-    
+
     patient = Patient.query.get(appt.patient_id)
     if patient:
         p_user = User.query.get(patient.user_id)
@@ -233,6 +221,7 @@ def doctor_update_status(appt_id):
 
     return {"msg": "Status updated successfully"}
 
+
 @doctor_bp.route("/patient/<int:patient_id>/history", methods=["GET"])
 @jwt_required()
 @role_required("doctor")
@@ -241,12 +230,10 @@ def patient_history(patient_id):
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
 
-    # verify patient exists
     patient = Patient.query.get(patient_id)
     if not patient:
         return {"msg": "Patient not found"}, 404
 
-    # check the doctor has at least one appointment with this patient
     patient_appts = Appointment.query.filter_by(
         patient_id=patient_id,
         doctor_id=doctor.id
@@ -255,7 +242,6 @@ def patient_history(patient_id):
     if not patient_appts:
         return {"msg": "Doctor not authorized to view this patient's history"}, 403
 
-    # build full history response
     history_data = []
     from ..models.treatment import Treatment
 
@@ -276,7 +262,6 @@ def patient_history(patient_id):
             } if treatment else None
         })
 
-    # patient info
     user = User.query.get(patient.user_id) if patient else None
     patient_name = user.username if user else "Unknown"
 
@@ -293,22 +278,18 @@ def patient_history(patient_id):
     })
 
 
-# ADD TREATMENT RECORD
 @doctor_bp.route("/appointments/<int:appt_id>/treatment", methods=["POST"])
 @jwt_required()
 @role_required("doctor")
 def add_treatment(appt_id):
-    """Doctor adds treatment record for a completed appointment"""
     doctor = get_current_doctor()
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
 
-    # Verify appointment exists and belongs to this doctor
     appt = Appointment.query.get(appt_id)
     if not appt or appt.doctor_id != doctor.id:
         return {"msg": "Appointment not found"}, 404
 
-    # Check if treatment already exists
     from ..models.treatment import Treatment
     existing = Treatment.query.filter_by(appointment_id=appt_id).first()
     if existing:
@@ -323,7 +304,6 @@ def add_treatment(appt_id):
     if not diagnosis or not prescription:
         return {"msg": "diagnosis and prescription are required"}, 400
 
-    # Create treatment record
     treatment = Treatment(
         appointment_id=appt_id,
         diagnosis=diagnosis,
@@ -333,18 +313,16 @@ def add_treatment(appt_id):
     )
 
     db.session.add(treatment)
-    
-    # Optionally mark appointment as completed
+
     if appt.status == "Booked":
         appt.status = "Completed"
-    
+
     db.session.commit()
 
-    # Trigger action: Notify patient of treatment record
     from ..utils.notifications import send_google_chat_message
     from ..models.patient import Patient
     from ..models.user import User
-    
+
     patient = Patient.query.get(appt.patient_id)
     if patient:
         p_user = User.query.get(patient.user_id)
@@ -355,7 +333,7 @@ def add_treatment(appt_id):
               f"Please check your portal for full details."
         if next_visit:
             msg += f"\nFollow-up Recommendation: *{next_visit}*"
-            
+
         send_google_chat_message(msg)
 
     return jsonify({
@@ -364,12 +342,10 @@ def add_treatment(appt_id):
     }), 201
 
 
-# UPDATE TREATMENT RECORD
 @doctor_bp.route("/treatments/<int:treatment_id>", methods=["PUT"])
 @jwt_required()
 @role_required("doctor")
 def update_treatment(treatment_id):
-    """Doctor updates an existing treatment record"""
     doctor = get_current_doctor()
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
@@ -379,14 +355,12 @@ def update_treatment(treatment_id):
     if not treatment:
         return {"msg": "Treatment record not found"}, 404
 
-    # Verify the treatment's appointment belongs to this doctor
     appt = Appointment.query.get(treatment.appointment_id)
     if not appt or appt.doctor_id != doctor.id:
         return {"msg": "Unauthorized to update this treatment record"}, 403
 
     data = request.get_json() or {}
 
-    # Update fields if provided
     if "diagnosis" in data:
         treatment.diagnosis = data["diagnosis"].strip()
     if "prescription" in data:
@@ -410,17 +384,14 @@ def update_treatment(treatment_id):
     })
 
 
-# GET PATIENTS LIST (for doctor's dashboard)
 @doctor_bp.route("/patients", methods=["GET"])
 @jwt_required()
 @role_required("doctor")
 def get_doctor_patients():
-    """Get list of all patients who have appointments with this doctor"""
     doctor = get_current_doctor()
     if not doctor:
         return {"msg": "Doctor profile not found"}, 404
 
-    # Get unique patients from appointments
     appointments = Appointment.query.filter_by(doctor_id=doctor.id).all()
     patient_ids = list(set([appt.patient_id for appt in appointments]))
 
@@ -438,4 +409,3 @@ def get_doctor_patients():
             })
 
     return jsonify(patients_data)
-

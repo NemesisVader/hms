@@ -2,6 +2,7 @@ from flask import jsonify
 from werkzeug.exceptions import HTTPException, BadRequest
 from flask_jwt_extended.exceptions import JWTExtendedException
 
+
 def register_error_handlers(app):
 
     @app.errorhandler(HTTPException)

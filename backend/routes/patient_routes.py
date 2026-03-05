@@ -36,7 +36,6 @@ def is_slot_in_availability(availability: dict, appt_date: str, appt_time: str) 
 
 
 def doctor_has_conflict(doctor_id: int, appt_date: str, appt_time: str, exclude_appt_id: int = None) -> bool:
-    # Only "Booked" appointments block a slot — Completed/Cancelled free it up
     q = Appointment.query.filter_by(doctor_id=doctor_id, date=appt_date, time=appt_time, status="Booked")
     if exclude_appt_id:
         q = q.filter(Appointment.id != exclude_appt_id)
@@ -44,13 +43,11 @@ def doctor_has_conflict(doctor_id: int, appt_date: str, appt_time: str, exclude_
 
 
 def patient_has_conflict(patient_id: int, appt_date: str, appt_time: str, exclude_appt_id: int = None) -> bool:
-    # Only "Booked" appointments block a slot — Completed/Cancelled free it up
     q = Appointment.query.filter_by(patient_id=patient_id, date=appt_date, time=appt_time, status="Booked")
     if exclude_appt_id:
         q = q.filter(Appointment.id != exclude_appt_id)
     return db.session.query(q.exists()).scalar()
 
-#   PROFILE
 
 @patient_bp.route("/me", methods=["GET"])
 @jwt_required()
@@ -97,8 +94,6 @@ def update_profile():
     return jsonify({"msg": "Profile updated"})
 
 
-#   FOLLOW-UP REMINDERS
-
 @patient_bp.route("/next-visits", methods=["GET"])
 @jwt_required()
 @role_required("patient")
@@ -110,7 +105,6 @@ def next_visits():
     from ..models.treatment import Treatment
     today_str = str(date.today())
 
-    # Get all treatments for this patient's appointments that have a next_visit date
     results = (
         db.session.query(Treatment, Appointment, Doctor, User)
         .join(Appointment, Treatment.appointment_id == Appointment.id)
@@ -127,17 +121,14 @@ def next_visits():
 
     out = []
     for treat, appt, doc, doc_user in results:
-        # Skip if next_visit is somehow empty (belt-and-suspenders for string column)
         if not treat.next_visit or not treat.next_visit.strip():
             continue
 
-        # Check if patient already has a NEW appointment with this doctor on/after the next_visit date
-        # Exclude the ORIGINAL appointment itself so it doesn't self-match
         followup_appt = Appointment.query.filter(
             Appointment.patient_id == patient.id,
             Appointment.doctor_id == doc.id,
             Appointment.date >= treat.next_visit,
-            Appointment.id != appt.id,  # exclude the original appointment
+            Appointment.id != appt.id,
         ).order_by(Appointment.date.desc()).first()
 
         item = {
@@ -150,18 +141,16 @@ def next_visits():
         }
 
         if followup_appt and followup_appt.status in ("Booked", "Completed"):
-            continue  # Already handled — no reminder needed
+            continue
         elif followup_appt and followup_appt.status == "Cancelled":
-            continue  # Cancelled — don't clutter the dashboard, patient can rebook normally
+            continue
         else:
-            item["status"] = "pending"  # Never booked — show reminder
+            item["status"] = "pending"
 
         out.append(item)
 
     return jsonify(out)
 
-
-#   DEPARTMENTS / DOCTORS / AVAILABILITY 
 
 def _attach_booked_slots(docs_list):
     if not docs_list:
@@ -181,6 +170,7 @@ def _attach_booked_slots(docs_list):
     for d in docs_list:
         d["booked_slots"] = booked_map.get(d["doctor_id"], {})
     return docs_list
+
 
 @patient_bp.route("/departments", methods=["GET"])
 @jwt_required(optional=True)
@@ -286,8 +276,6 @@ def search_doctors():
     return jsonify(out)
 
 
-#   BOOK APPOINTMENT
-
 @patient_bp.route("/appointments", methods=["POST"])
 @jwt_required()
 @role_required("patient")
@@ -339,24 +327,20 @@ def book_appointment():
     db.session.add(appt)
     db.session.commit()
 
-    # If appointment is TODAY → send immediate notification
-    # For future dates, the daily 7 AM Celery Beat reminder handles it
     if appt_date == str(date.today()):
         from ..utils.notifications import send_google_chat_message
         patient_user = User.query.get(patient.user_id)
         doc_user = User.query.get(doc.user_id)
         send_google_chat_message(
-            f" *Appointment Booked — Today!*\n"
+            f"*Appointment Booked - Today!*\n"
             f"Hello *{patient_user.username if patient_user else 'Patient'}*,\n"
             f"Your appointment with *Dr. {doc_user.username if doc_user else 'your doctor'}* "
             f"is confirmed for today at *{appt_time}*.\n"
             f"Please reach the hospital on time."
         )
 
-    # we should not invalidate cached availability here unless availability changes
     return jsonify({"msg": "Appointment booked", "appointment_id": appt.id}), 201
 
-#   CANCEL / RESCHEDULE
 
 @patient_bp.route("/appointments/<int:appt_id>/cancel", methods=["PUT"])
 @jwt_required()
@@ -373,16 +357,15 @@ def cancel_appointment(appt_id):
     appt.status = "Cancelled"
     db.session.commit()
 
-    # Trigger action: Notify system
     from ..utils.notifications import send_google_chat_message
     from ..models.user import User
     from ..models.doctor import Doctor
-    
+
     u = User.query.get(patient.user_id)
     doc = Doctor.query.get(appt.doctor_id)
     doc_u = User.query.get(doc.user_id) if doc else None
-    
-    msg = f"❌ *Appointment Cancelled*\n" \
+
+    msg = f"*Appointment Cancelled*\n" \
           f"Patient: *{u.username if u else 'Unknown'}*\n" \
           f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
           f"Date: {appt.date} at {appt.time}"
@@ -436,14 +419,13 @@ def reschedule_appointment(appt_id):
     appt.status = "Booked"
     db.session.commit()
 
-    # Trigger action: Notify system
     from ..utils.notifications import send_google_chat_message
     from ..models.user import User
     from ..models.doctor import Doctor
-    
+
     u = User.query.get(patient.user_id)
     doc_u = User.query.get(doc.user_id) if doc else None
-    
+
     msg = f"*Appointment Rescheduled*\n" \
           f"Patient: *{u.username if u else 'Unknown'}*\n" \
           f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
@@ -451,8 +433,6 @@ def reschedule_appointment(appt_id):
     send_google_chat_message(msg)
 
     return jsonify({"msg": "Appointment rescheduled", "appointment_id": appt.id})
-
-#   VIEW APPOINTMENTS
 
 
 @patient_bp.route("/appointments/upcoming", methods=["GET"])
@@ -521,12 +501,8 @@ def appointment_history():
     return jsonify(out)
 
 
-#   EXPORT TREATMENTS
-
 import os as _os
 
-# Absolute path to the exports folder — works regardless of where
-# Flask or the Celery worker was launched from.
 _EXPORTS_DIR = _os.path.abspath(
     _os.path.join(_os.path.dirname(__file__), "..", "..", "exports")
 )

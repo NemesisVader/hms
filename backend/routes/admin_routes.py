@@ -16,7 +16,6 @@ from werkzeug.security import generate_password_hash
 
 admin_bp = Blueprint("admin", __name__)
 
-#  DOCTOR MANAGEMENT
 
 @admin_bp.route("/doctors", methods=["POST"])
 @jwt_required()
@@ -36,7 +35,6 @@ def add_doctor():
     if User.query.filter_by(username=username).first():
         return jsonify({"msg": "Username already exists"}), 409
 
-    # validate department exists
     dept = Department.query.get(department_id)
     if not dept:
         return jsonify({"msg": "department_id is invalid"}), 400
@@ -44,9 +42,8 @@ def add_doctor():
     hashed_pw = generate_password_hash(password)
     user = User(username=username, password=hashed_pw, role="doctor")
     db.session.add(user)
-    db.session.flush()  # get user.id
+    db.session.flush()
 
-    # availability expected to be a dict (days -> list of slots) or empty dict
     if availability and not isinstance(availability, dict):
         return jsonify({"msg": "availability must be a JSON object (dict)"}), 400
 
@@ -60,7 +57,6 @@ def add_doctor():
     db.session.add(doctor)
     db.session.commit()
 
-    # invalidate caches affected by new doctor
     cache_delete("doctors_list")
     cache_delete("departments_list")
     cache_delete("patient_departments")
@@ -73,15 +69,12 @@ def add_doctor():
 @jwt_required()
 @role_required("admin")
 def get_doctors():
-    # optional pagination
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
-    # try cache (store full list)
     cache_key = "doctors_list"
     cached = cache_get(cache_key)
     if cached is not None:
-        # cached is list of doctor dicts; do in-memory pagination
         total = len(cached)
         start = (page - 1) * per_page
         end = start + per_page
@@ -109,9 +102,7 @@ def get_doctors():
             "is_active": user.is_active if user else False
         })
 
-    # store full list in cache (TTL default in cache_set)
     cache_set(cache_key, data)
-    # return paginated slice
     total = len(data)
     start = (page - 1) * per_page
     end = start + per_page
@@ -168,7 +159,6 @@ def update_doctor(doctor_id):
     if "availability" in data and data.get("availability") is not None and not isinstance(data.get("availability"), dict):
         return jsonify({"msg": "availability must be a JSON object (dict)"}), 400
 
-    # Allow updating the doctor's display name (username)
     if "username" in data and data.get("username"):
         user = User.query.get(doc.user_id)
         if user:
@@ -183,15 +173,12 @@ def update_doctor(doctor_id):
 
     db.session.commit()
 
-    # invalidate relevant caches
     cache_delete("doctors_list")
     cache_delete(f"doctor:{doctor_id}")
     cache_delete("departments_list")
     cache_delete("patient_departments")
-    # invalidate old and new department doctor lists
     cache_delete(f"dept_doctors:{old_dept_id}")
     cache_delete(f"dept_doctors:{doc.department_id}")
-    # availability specific cache
     cache_delete(f"availability:{doctor_id}")
 
     return jsonify({"msg": "Doctor updated"})
@@ -210,7 +197,6 @@ def delete_doctor(doctor_id):
         user.is_active = False
     db.session.commit()
 
-    # invalidate caches
     cache_delete("doctors_list")
     cache_delete(f"doctor:{doctor_id}")
     cache_delete("admin:dashboard")
@@ -236,6 +222,7 @@ def restore_doctor(doctor_id):
     cache_delete("admin:dashboard")
 
     return jsonify({"msg": "Doctor restored successfully"})
+
 
 @admin_bp.route("/doctors/search", methods=["GET"])
 @jwt_required()
@@ -272,6 +259,7 @@ def search_doctors():
         for d in results
     ])
 
+
 @admin_bp.route("/doctors/<int:doctor_id>/availability", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
@@ -286,7 +274,6 @@ def set_doctor_availability(doctor_id):
     if availability is None or not isinstance(availability, dict):
         return jsonify({"msg": "Invalid availability format. Must be JSON object (dict)."}), 400
 
-    # Validate structure: keys -> list
     for day, slots in availability.items():
         if not isinstance(slots, list):
             return jsonify({"msg": f"Invalid format for {day}. Must be a list of slots"}), 400
@@ -294,7 +281,6 @@ def set_doctor_availability(doctor_id):
     doc.availability = availability or {}
     db.session.commit()
 
-    # invalidate caches impacted by availability change
     cache_delete("doctors_list")
     cache_delete(f"doctor:{doctor_id}")
     cache_delete("departments_list")
@@ -304,13 +290,11 @@ def set_doctor_availability(doctor_id):
 
     return jsonify({"msg": "Availability updated successfully"})
 
-#  PATIENT MANAGEMENT
 
 @admin_bp.route("/patients", methods=["GET"])
 @jwt_required()
 @role_required("admin")
 def get_patients():
-    # optional pagination
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
@@ -344,6 +328,7 @@ def get_patients():
     cache_set(cache_key, result, expire=300)
     return jsonify(result)
 
+
 @admin_bp.route("/patients/<int:patient_id>", methods=["GET"])
 @jwt_required()
 @role_required("admin")
@@ -371,13 +356,11 @@ def update_patient(patient_id):
         return jsonify({"msg": "Patient not found"}), 404
 
     data = request.get_json() or {}
-    # Allow updating patient profile fields only (not user role)
     p.age = data.get("age", p.age)
     p.gender = data.get("gender", p.gender)
     p.phone = data.get("phone", p.phone)
     p.address = data.get("address", p.address)
 
-    # Optionally update username via User model
     if data.get("username"):
         u = User.query.get(p.user_id)
         if u:
@@ -402,7 +385,6 @@ def delete_patient(patient_id):
         user.is_active = False
     db.session.commit()
 
-    # Invalidate related caches
     cache_delete("admin:dashboard")
     cache_delete("admin:patients:p1:pp50")
 
@@ -436,7 +418,6 @@ def search_patients():
     if not q:
         return jsonify({"msg": "Search query missing"}), 400
 
-    # search by username (User), patient id, or phone
     results = (
         Patient.query
         .join(User, Patient.user_id == User.id)
@@ -462,13 +443,11 @@ def search_patients():
 
     return jsonify(output)
 
-#  APPOINTMENT MANAGEMENT
 
 @admin_bp.route("/appointments", methods=["GET"])
 @jwt_required()
 @role_required("admin")
 def get_all_appointments():
-    # Filters: doctor_id, patient_id, date, status, pagination
     doctor_id = request.args.get("doctor_id")
     patient_id = request.args.get("patient_id")
     date_q = request.args.get("date")
@@ -542,7 +521,6 @@ def admin_update_appointment_status(appt_id):
     appt.status = new_status
     db.session.commit()
 
-    # invalidate dashboard and appointment caches
     cache_delete("admin:dashboard")
 
     return jsonify({
@@ -551,8 +529,6 @@ def admin_update_appointment_status(appt_id):
         "status": new_status
     })
 
-
-#  DASHBOARD
 
 @admin_bp.route("/dashboard", methods=["GET"])
 @jwt_required()
@@ -584,8 +560,6 @@ def dashboard():
     return jsonify(result)
 
 
-#  DEPARTMENT MANAGEMENT
-
 @admin_bp.route("/departments", methods=["POST"])
 @jwt_required()
 @role_required("admin")
@@ -605,7 +579,6 @@ def create_department():
     db.session.add(dept)
     db.session.commit()
 
-    # invalidate caches
     cache_delete("departments_list")
     cache_delete("patient_departments")
     cache_delete(f"dept_doctors:{dept.id}")
@@ -645,7 +618,6 @@ def get_departments():
             "doctors": doctors_data
         })
 
-    # store in Redis
     cache_set(cache_key, data)
     return jsonify(data)
 
@@ -717,7 +689,6 @@ def update_department(dept_id):
 
     db.session.commit()
 
-    # invalidate caches
     cache_delete("departments_list")
     cache_delete("patient_departments")
     cache_delete(f"dept_doctors:{dept_id}")
@@ -734,14 +705,12 @@ def delete_department(dept_id):
     if not dept:
         return jsonify({"msg": "Department not found"}), 404
 
-    # Prevent deleting if doctors exist
     if len(dept.doctors) > 0:
         return jsonify({"msg": "Cannot delete department with registered doctors"}), 400
 
     db.session.delete(dept)
     db.session.commit()
 
-    # invalidate caches
     cache_delete("departments_list")
     cache_delete("patient_departments")
     cache_delete(f"dept_doctors:{dept_id}")

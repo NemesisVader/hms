@@ -119,7 +119,6 @@ onMounted(fetchAppointments);
       </div>
     </div>
 
-    <!-- Treatment Modal -->
     <div v-if="showTreatmentModal" class="modal d-block" style="background:rgba(0,0,0,0.4)" @click.self="showTreatmentModal = false">
       <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">

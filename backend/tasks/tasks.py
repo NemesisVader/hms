@@ -13,7 +13,6 @@ def _get_app():
     return create_app()
 
 
-# DAILY REMINDER TASK
 @celery.task(name="tasks.send_daily_reminders")
 def send_daily_reminders():
     app = _get_app()
@@ -27,7 +26,6 @@ def send_daily_reminders():
 
         today_str = str(date.today())
 
-        # ── 1. Appointment reminders (Booked only) ──────────────────────────
         appts = Appointment.query.filter(
             Appointment.date == today_str,
             Appointment.status == "Booked"
@@ -45,13 +43,12 @@ def send_daily_reminders():
             doctor_name = f"Dr. {doc_user.username}" if doc_user else "your doctor"
 
             send_google_chat_message(
-                f"🏥 *Hospital Appointment Reminder*\n"
+                f"*Hospital Appointment Reminder*\n"
                 f"Hello *{user.username}*,\n"
                 f"You have an appointment today at *{appt.time}* with *{doctor_name}*.\n"
                 f"Please reach the hospital on time."
             )
 
-        # ── 2. Cancelled follow-up nudges (G-Chat only, not on frontend) ─────
         cancelled_followups = (
             db.session.query(Treatment, Appointment, Doctor, User)
             .join(Appointment, Treatment.appointment_id == Appointment.id)
@@ -65,7 +62,6 @@ def send_daily_reminders():
         )
 
         for treat, orig_appt, doc, doc_user in cancelled_followups:
-            # Find a follow-up appointment that was cancelled
             cancelled = Appointment.query.filter(
                 Appointment.patient_id == orig_appt.patient_id,
                 Appointment.doctor_id == doc.id,
@@ -85,7 +81,7 @@ def send_daily_reminders():
                 continue
 
             send_google_chat_message(
-                f"⚠️ *Cancelled Follow-up Reminder*\n"
+                f"*Cancelled Follow-up Reminder*\n"
                 f"Hello *{patient_user.username}*,\n"
                 f"You had a follow-up scheduled with *Dr. {doc_user.username}* "
                 f"on *{treat.next_visit}* (for: _{treat.diagnosis}_) that was cancelled.\n"
@@ -95,10 +91,6 @@ def send_daily_reminders():
         return {"reminders": len(appts)}
 
 
-
-
-
-# MONTHLY DOCTOR REPORT
 @celery.task(name="tasks.send_monthly_reports")
 def send_monthly_reports():
     app = _get_app()
@@ -136,7 +128,6 @@ def send_monthly_reports():
             if not appts:
                 continue
 
-            # Generate detailed HTML report
             html_report = f"""
             <html>
             <head>
@@ -157,7 +148,7 @@ def send_monthly_reports():
             <body>
                 <h1>Monthly Activity Report - {month_name}</h1>
                 <p><strong>Doctor:</strong> Dr. {doc_user.username}</p>
-                
+
                 <div class="summary">
                     <h2>Summary Statistics</h2>
                     <div class="stat">
@@ -202,25 +193,24 @@ def send_monthly_reports():
             </html>
             """
 
-            # Save HTML report to file
             os.makedirs("reports", exist_ok=True)
             report_filename = f"reports/monthly_report_{doc.id}_{last_month_end.strftime('%Y_%m')}.html"
-            
+
             with open(report_filename, "w", encoding="utf-8") as f:
                 f.write(html_report)
 
             doctor_email = os.getenv(f"DOCTOR_{doc.id}_EMAIL", f"{doc_user.username}@hospital.com")
-            
+
             email_sent = send_email_with_html(
                 to_email=doctor_email,
                 subject=f"Monthly Activity Report - {month_name}",
                 html_content=html_report,
                 attachment_path=report_filename
             )
-            
+
             if email_sent:
                 send_google_chat_message(
-                    f"📊 Monthly Report Sent\n"
+                    f"Monthly Report Sent\n"
                     f"Doctor: Dr. {doc_user.username}\n"
                     f"Period: {month_name}\n"
                     f"Appointments: {len(appts)}\n"
@@ -228,7 +218,7 @@ def send_monthly_reports():
                 )
             else:
                 send_google_chat_message(
-                    f"⚠️ Monthly Report Generated (Email Failed)\n"
+                    f"Monthly Report Generated (Email Failed)\n"
                     f"Doctor: Dr. {doc_user.username}\n"
                     f"Period: {month_name}\n"
                     f"Appointments: {len(appts)}\n"
@@ -239,9 +229,6 @@ def send_monthly_reports():
         return "Monthly reports completed"
 
 
-
-
-# CSV EXPORT
 @celery.task(name="tasks.export_treatments")
 def export_treatments(patient_id):
     app = _get_app()
@@ -265,7 +252,6 @@ def export_treatments(patient_id):
             Appointment.date.desc()
         ).all()
 
-        # Absolute path so this works no matter where the worker is started from
         exports_dir = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "exports")
         )
@@ -299,7 +285,7 @@ def export_treatments(patient_id):
                 ])
 
         send_google_chat_message(
-            f"📁 CSV Export Ready for {user.username}\nFile: {filename}"
+            f"CSV Export Ready for {user.username}\nFile: {filename}"
         )
 
         return {"file": filename, "status": "done"}

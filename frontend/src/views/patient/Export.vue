@@ -42,7 +42,6 @@ const startPolling = () => {
         message.value = "Export failed: " + (res.data.msg || "Unknown error");
       }
     } catch (e) {
-      // keep polling
     }
   }, 2000);
 };
@@ -110,13 +109,12 @@ const downloadCsv = async () => {
             <span v-if="downloading">
               <span class="spinner-border spinner-border-sm me-1"></span> Downloading...
             </span>
-            <span v-else>⬇ Download CSV</span>
+            <span v-else>Download CSV</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- CSV Format Info -->
     <div class="card mt-3">
       <div class="card-body" style="font-size:0.82rem">
         <h6 class="fw-bold mb-2" style="font-size:0.9rem">CSV Fields</h6>

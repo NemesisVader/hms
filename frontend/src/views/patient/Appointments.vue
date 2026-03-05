@@ -44,7 +44,6 @@ const openReschedule = async (appt) => {
   rescheduleError.value = "";
   doctorAvailability.value = {};
   doctorBookedSlots.value = {};
-  // Fetch doctor's availability
   try {
     const res = await api.get("/patient/doctors/" + appt.doctor_id + "/availability");
     doctorAvailability.value = res.data.availability || {};

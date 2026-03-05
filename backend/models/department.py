@@ -7,5 +7,4 @@ class Department(db.Model):
     name = db.Column(db.String(120), unique=True, nullable=False)
     description = db.Column(db.Text)
 
-    # relationship
     doctors = db.relationship("Doctor", backref="department", lazy=True)

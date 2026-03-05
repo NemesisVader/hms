@@ -13,5 +13,4 @@ class Patient(db.Model):
     phone = db.Column(db.String(15))
     address = db.Column(db.String(200))
 
-    # Relationship to User
     user = relationship("User", backref="patient", uselist=False)

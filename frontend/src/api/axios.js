@@ -14,7 +14,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on 401 (expired/invalid token)
 api.interceptors.response.use(
   (response) => response,
   (error) => {

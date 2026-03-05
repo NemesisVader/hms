@@ -9,6 +9,6 @@ class Treatment(db.Model):
     diagnosis = db.Column(db.Text, nullable=False)
     prescription = db.Column(db.Text, nullable=False)
     notes = db.Column(db.Text)
-    next_visit = db.Column(db.String(20))  # Recommended next appointment date (YYYY-MM-DD)
-    
+    next_visit = db.Column(db.String(20))
+
     appointment = db.relationship("Appointment", backref="treatment")

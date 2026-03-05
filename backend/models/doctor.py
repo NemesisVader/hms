@@ -11,6 +11,4 @@ class Doctor(db.Model):
     specialization = db.Column(db.String(120), nullable=False)
     availability = db.Column(db.JSON, nullable=True)
 
-    # Relationship to User
     user = relationship("User", backref="doctor", uselist=False)
-
