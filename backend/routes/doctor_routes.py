@@ -11,9 +11,24 @@ from datetime import date, timedelta
 doctor_bp = Blueprint("doctor", __name__)
 
 def get_current_doctor():
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     doctor = Doctor.query.filter_by(user_id=user_id).first()
     return doctor
+
+
+# GET DOCTOR'S OWN AVAILABILITY
+@doctor_bp.route("/availability", methods=["GET"])
+@jwt_required()
+@role_required("doctor")
+def get_availability():
+    """Doctor views their own availability"""
+    doctor = get_current_doctor()
+    if not doctor:
+        return {"msg": "Doctor profile not found"}, 404
+
+    return jsonify({
+        "availability": doctor.availability or {}
+    })
 
 
 # SET DOCTOR'S OWN AVAILABILITY
@@ -72,10 +87,22 @@ def doctor_today():
     data = []
     for a in appts:
         patient = Patient.query.get(a.patient_id)
+        if not patient:
+            data.append({
+                "appointment_id": a.id,
+                "patient_id": a.patient_id,
+                "patient": "Unknown (Patient profile missing)",
+                "date": a.date,
+                "time": a.time,
+                "status": a.status
+            })
+            continue
+
         user = User.query.get(patient.user_id)
         data.append({
             "appointment_id": a.id,
-            "patient": user.username,
+            "patient_id": patient.id,
+            "patient": user.username if user else "Unknown (User record missing)",
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -105,10 +132,22 @@ def doctor_week():
     data = []
     for a in appts:
         patient = Patient.query.get(a.patient_id)
+        if not patient:
+            data.append({
+                "appointment_id": a.id,
+                "patient_id": a.patient_id,
+                "patient": "Unknown (Patient profile missing)",
+                "date": a.date,
+                "time": a.time,
+                "status": a.status
+            })
+            continue
+
         user = User.query.get(patient.user_id)
         data.append({
             "appointment_id": a.id,
-            "patient": user.username,
+            "patient_id": patient.id,
+            "patient": user.username if user else "Unknown (User record missing)",
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -133,10 +172,22 @@ def doctor_all():
     data = []
     for a in appts:
         patient = Patient.query.get(a.patient_id)
+        if not patient:
+            data.append({
+                "appointment_id": a.id,
+                "patient_id": a.patient_id,
+                "patient": "Unknown (Patient profile missing)",
+                "date": a.date,
+                "time": a.time,
+                "status": a.status
+            })
+            continue
+
         user = User.query.get(patient.user_id)
         data.append({
             "appointment_id": a.id,
-            "patient": user.username,
+            "patient_id": patient.id,
+            "patient": user.username if user else "Unknown (User record missing)",
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -166,6 +217,19 @@ def doctor_update_status(appt_id):
 
     appt.status = new_status
     db.session.commit()
+
+    # Trigger action: Notify system of status change
+    from ..utils.notifications import send_google_chat_message
+    from ..models.patient import Patient
+    from ..models.user import User
+    
+    patient = Patient.query.get(appt.patient_id)
+    if patient:
+        p_user = User.query.get(patient.user_id)
+        msg = f"*Appointment Update*\n" \
+              f"Hello *{p_user.username if p_user else 'Patient'}*,\n" \
+              f"Your appointment with Dr. *{doctor.user.username}* has been marked as *{new_status}*."
+        send_google_chat_message(msg)
 
     return {"msg": "Status updated successfully"}
 
@@ -204,6 +268,7 @@ def patient_history(patient_id):
             "time": appt.time,
             "status": appt.status,
             "treatment": {
+                "id": treatment.id if treatment else None,
                 "diagnosis": treatment.diagnosis if treatment else None,
                 "prescription": treatment.prescription if treatment else None,
                 "notes": treatment.notes if treatment else None,
@@ -212,16 +277,17 @@ def patient_history(patient_id):
         })
 
     # patient info
-    user = User.query.get(patient.user_id)
+    user = User.query.get(patient.user_id) if patient else None
+    patient_name = user.username if user else "Unknown"
 
     return jsonify({
         "patient": {
-            "id": patient.id,
-            "name": user.username,
-            "age": patient.age,
-            "gender": patient.gender,
-            "phone": patient.phone,
-            "address": patient.address
+            "id": patient.id if patient else patient_id,
+            "name": patient_name,
+            "age": patient.age if patient else None,
+            "gender": patient.gender if patient else None,
+            "phone": patient.phone if patient else None,
+            "address": patient.address if patient else None
         },
         "history": history_data
     })
@@ -273,6 +339,24 @@ def add_treatment(appt_id):
         appt.status = "Completed"
     
     db.session.commit()
+
+    # Trigger action: Notify patient of treatment record
+    from ..utils.notifications import send_google_chat_message
+    from ..models.patient import Patient
+    from ..models.user import User
+    
+    patient = Patient.query.get(appt.patient_id)
+    if patient:
+        p_user = User.query.get(patient.user_id)
+        msg = f"*New Treatment Record Added*\n" \
+              f"Hello *{p_user.username if p_user else 'Patient'}*,\n" \
+              f"Dr. *{doctor.user.username}* has added a treatment record for your appointment on {appt.date}.\n" \
+              f"Diagnosis: *{diagnosis}*.\n" \
+              f"Please check your portal for full details."
+        if next_visit:
+            msg += f"\nFollow-up Recommendation: *{next_visit}*"
+            
+        send_google_chat_message(msg)
 
     return jsonify({
         "msg": "Treatment record added successfully",

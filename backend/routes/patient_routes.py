@@ -20,7 +20,7 @@ TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 
 
 def get_current_patient():
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     return Patient.query.filter_by(user_id=user_id).first()
 
 
@@ -36,14 +36,16 @@ def is_slot_in_availability(availability: dict, appt_date: str, appt_time: str) 
 
 
 def doctor_has_conflict(doctor_id: int, appt_date: str, appt_time: str, exclude_appt_id: int = None) -> bool:
-    q = Appointment.query.filter_by(doctor_id=doctor_id, date=appt_date, time=appt_time)
+    # Only "Booked" appointments block a slot — Completed/Cancelled free it up
+    q = Appointment.query.filter_by(doctor_id=doctor_id, date=appt_date, time=appt_time, status="Booked")
     if exclude_appt_id:
         q = q.filter(Appointment.id != exclude_appt_id)
     return db.session.query(q.exists()).scalar()
 
 
 def patient_has_conflict(patient_id: int, appt_date: str, appt_time: str, exclude_appt_id: int = None) -> bool:
-    q = Appointment.query.filter_by(patient_id=patient_id, date=appt_date, time=appt_time)
+    # Only "Booked" appointments block a slot — Completed/Cancelled free it up
+    q = Appointment.query.filter_by(patient_id=patient_id, date=appt_date, time=appt_time, status="Booked")
     if exclude_appt_id:
         q = q.filter(Appointment.id != exclude_appt_id)
     return db.session.query(q.exists()).scalar()
@@ -94,8 +96,91 @@ def update_profile():
     db.session.commit()
     return jsonify({"msg": "Profile updated"})
 
+
+#   FOLLOW-UP REMINDERS
+
+@patient_bp.route("/next-visits", methods=["GET"])
+@jwt_required()
+@role_required("patient")
+def next_visits():
+    patient = get_current_patient()
+    if not patient:
+        return jsonify([])
+
+    from ..models.treatment import Treatment
+    today_str = str(date.today())
+
+    # Get all treatments for this patient's appointments that have a next_visit date
+    results = (
+        db.session.query(Treatment, Appointment, Doctor, User)
+        .join(Appointment, Treatment.appointment_id == Appointment.id)
+        .join(Doctor, Appointment.doctor_id == Doctor.id)
+        .join(User, Doctor.user_id == User.id)
+        .filter(
+            Appointment.patient_id == patient.id,
+            Treatment.next_visit != None,
+            Treatment.next_visit >= today_str,
+        )
+        .order_by(Treatment.next_visit.asc())
+        .all()
+    )
+
+    out = []
+    for treat, appt, doc, doc_user in results:
+        # Skip if next_visit is somehow empty (belt-and-suspenders for string column)
+        if not treat.next_visit or not treat.next_visit.strip():
+            continue
+
+        # Check if patient already has a NEW appointment with this doctor on/after the next_visit date
+        # Exclude the ORIGINAL appointment itself so it doesn't self-match
+        followup_appt = Appointment.query.filter(
+            Appointment.patient_id == patient.id,
+            Appointment.doctor_id == doc.id,
+            Appointment.date >= treat.next_visit,
+            Appointment.id != appt.id,  # exclude the original appointment
+        ).order_by(Appointment.date.desc()).first()
+
+        item = {
+            "next_visit": treat.next_visit,
+            "doctor_name": doc_user.username,
+            "doctor_id": doc.id,
+            "specialization": doc.specialization,
+            "diagnosis": treat.diagnosis,
+            "original_date": appt.date,
+        }
+
+        if followup_appt and followup_appt.status in ("Booked", "Completed"):
+            continue  # Already handled — no reminder needed
+        elif followup_appt and followup_appt.status == "Cancelled":
+            continue  # Cancelled — don't clutter the dashboard, patient can rebook normally
+        else:
+            item["status"] = "pending"  # Never booked — show reminder
+
+        out.append(item)
+
+    return jsonify(out)
+
+
 #   DEPARTMENTS / DOCTORS / AVAILABILITY 
 
+def _attach_booked_slots(docs_list):
+    if not docs_list:
+        return docs_list
+    doc_ids = [d["doctor_id"] for d in docs_list]
+    today_str = str(date.today())
+    appts = Appointment.query.filter(
+        Appointment.doctor_id.in_(doc_ids),
+        Appointment.date >= today_str,
+        Appointment.status == "Booked"
+    ).all()
+    booked_map = {d_id: {} for d_id in doc_ids}
+    for a in appts:
+        if a.date not in booked_map[a.doctor_id]:
+            booked_map[a.doctor_id][a.date] = []
+        booked_map[a.doctor_id][a.date].append(a.time)
+    for d in docs_list:
+        d["booked_slots"] = booked_map.get(d["doctor_id"], {})
+    return docs_list
 
 @patient_bp.route("/departments", methods=["GET"])
 @jwt_required(optional=True)
@@ -126,7 +211,7 @@ def doctors_by_department(dept_id):
     cache_key = f"dept_doctors:{dept_id}"
     cached = cache_get(cache_key)
     if cached:
-        return jsonify(cached)
+        return jsonify(_attach_booked_slots(cached))
 
     dept = Department.query.get(dept_id)
     if not dept:
@@ -137,13 +222,13 @@ def doctors_by_department(dept_id):
         user = User.query.get(doc.user_id)
         out.append({
             "doctor_id": doc.id,
-            "name": user.username if user else None,
+            "name": user.username if user else "Unknown (User record missing)",
             "specialization": doc.specialization,
             "availability": doc.availability or {}
         })
 
     cache_set(cache_key, out)
-    return jsonify(out)
+    return jsonify(_attach_booked_slots(out))
 
 
 @patient_bp.route("/doctors/<int:doctor_id>/availability", methods=["GET"])
@@ -152,7 +237,7 @@ def get_doctor_availability(doctor_id):
     cache_key = f"availability:{doctor_id}"
     cached = cache_get(cache_key)
     if cached:
-        return jsonify(cached)
+        return jsonify(_attach_booked_slots([cached])[0])
 
     doc = Doctor.query.get(doctor_id)
     if not doc:
@@ -164,7 +249,42 @@ def get_doctor_availability(doctor_id):
     }
 
     cache_set(cache_key, payload)
-    return jsonify(payload)
+    return jsonify(_attach_booked_slots([payload])[0])
+
+
+@patient_bp.route("/doctors/search", methods=["GET"])
+@jwt_required(optional=True)
+def search_doctors():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+
+    results = (
+        db.session.query(Doctor, User)
+        .join(User, Doctor.user_id == User.id)
+        .filter(
+            db.or_(
+                User.username.ilike(f"%{q}%"),
+                Doctor.specialization.ilike(f"%{q}%"),
+            ),
+            User.is_active == True,
+        )
+        .all()
+    )
+
+    out = []
+    for doc, user in results:
+        dept = Department.query.get(doc.department_id) if doc.department_id else None
+        out.append({
+            "doctor_id": doc.id,
+            "name": user.username,
+            "specialization": doc.specialization,
+            "department": dept.name if dept else None,
+            "availability": doc.availability or {},
+        })
+
+    return jsonify(out)
+
 
 #   BOOK APPOINTMENT
 
@@ -219,6 +339,20 @@ def book_appointment():
     db.session.add(appt)
     db.session.commit()
 
+    # If appointment is TODAY → send immediate notification
+    # For future dates, the daily 7 AM Celery Beat reminder handles it
+    if appt_date == str(date.today()):
+        from ..utils.notifications import send_google_chat_message
+        patient_user = User.query.get(patient.user_id)
+        doc_user = User.query.get(doc.user_id)
+        send_google_chat_message(
+            f" *Appointment Booked — Today!*\n"
+            f"Hello *{patient_user.username if patient_user else 'Patient'}*,\n"
+            f"Your appointment with *Dr. {doc_user.username if doc_user else 'your doctor'}* "
+            f"is confirmed for today at *{appt_time}*.\n"
+            f"Please reach the hospital on time."
+        )
+
     # we should not invalidate cached availability here unless availability changes
     return jsonify({"msg": "Appointment booked", "appointment_id": appt.id}), 201
 
@@ -238,6 +372,21 @@ def cancel_appointment(appt_id):
 
     appt.status = "Cancelled"
     db.session.commit()
+
+    # Trigger action: Notify system
+    from ..utils.notifications import send_google_chat_message
+    from ..models.user import User
+    from ..models.doctor import Doctor
+    
+    u = User.query.get(patient.user_id)
+    doc = Doctor.query.get(appt.doctor_id)
+    doc_u = User.query.get(doc.user_id) if doc else None
+    
+    msg = f"❌ *Appointment Cancelled*\n" \
+          f"Patient: *{u.username if u else 'Unknown'}*\n" \
+          f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
+          f"Date: {appt.date} at {appt.time}"
+    send_google_chat_message(msg)
 
     return jsonify({"msg": "Appointment cancelled"})
 
@@ -287,6 +436,20 @@ def reschedule_appointment(appt_id):
     appt.status = "Booked"
     db.session.commit()
 
+    # Trigger action: Notify system
+    from ..utils.notifications import send_google_chat_message
+    from ..models.user import User
+    from ..models.doctor import Doctor
+    
+    u = User.query.get(patient.user_id)
+    doc_u = User.query.get(doc.user_id) if doc else None
+    
+    msg = f"*Appointment Rescheduled*\n" \
+          f"Patient: *{u.username if u else 'Unknown'}*\n" \
+          f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
+          f"New Date: {new_date} at {new_time}"
+    send_google_chat_message(msg)
+
     return jsonify({"msg": "Appointment rescheduled", "appointment_id": appt.id})
 
 #   VIEW APPOINTMENTS
@@ -331,7 +494,10 @@ def appointment_history():
 
     appts = Appointment.query.filter(
         Appointment.patient_id == patient.id,
-        Appointment.date < str(date.today())
+        db.or_(
+            Appointment.date < str(date.today()),
+            Appointment.status.in_(["Completed", "Cancelled"])
+        )
     ).order_by(Appointment.date.desc(), Appointment.time.desc()).all()
 
     out = []
@@ -357,6 +523,15 @@ def appointment_history():
 
 #   EXPORT TREATMENTS
 
+import os as _os
+
+# Absolute path to the exports folder — works regardless of where
+# Flask or the Celery worker was launched from.
+_EXPORTS_DIR = _os.path.abspath(
+    _os.path.join(_os.path.dirname(__file__), "..", "..", "exports")
+)
+
+
 @patient_bp.route("/export_treatments", methods=["POST"])
 @jwt_required()
 @role_required("patient")
@@ -367,3 +542,46 @@ def export_treatments():
 
     task = export_task.delay(patient.id)
     return jsonify({"msg": "Export started", "task_id": task.id}), 202
+
+
+@patient_bp.route("/export_treatments/status/<task_id>", methods=["GET"])
+@jwt_required()
+@role_required("patient")
+def export_status(task_id):
+    try:
+        from backend.celery_app import get_celery_app
+        celery = get_celery_app()
+        task_result = celery.AsyncResult(task_id)
+
+        if task_result.state == "PENDING":
+            return jsonify({"status": "pending"})
+        elif task_result.state == "SUCCESS":
+            result = task_result.result or {}
+            return jsonify({"status": "done", "file": result.get("file", "")})
+        elif task_result.state == "FAILURE":
+            return jsonify({"status": "failed", "msg": str(task_result.info)}), 500
+        else:
+            return jsonify({"status": task_result.state.lower()})
+    except Exception as e:
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
+
+@patient_bp.route("/export_treatments/download", methods=["GET"])
+@jwt_required()
+@role_required("patient")
+def download_export():
+    from flask import send_file
+    patient = get_current_patient()
+    if not patient:
+        return jsonify({"msg": "Patient not found"}), 404
+
+    filepath = _os.path.join(_EXPORTS_DIR, f"treatment_export_{patient.id}.csv")
+    if not _os.path.exists(filepath):
+        return jsonify({"msg": "Export file not found. Please trigger an export first."}), 404
+
+    return send_file(
+        filepath,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"treatment_history_{patient.id}.csv"
+    )

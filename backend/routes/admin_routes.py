@@ -10,6 +10,7 @@ from ..models.department import Department
 from ..models.patient import Patient
 from ..models.user import User
 from ..models.appointment import Appointment
+from ..models.treatment import Treatment
 from ..utils.cache import cache_get, cache_set, cache_delete
 from werkzeug.security import generate_password_hash
 
@@ -104,7 +105,8 @@ def get_doctors():
             "name": user.username if user else None,
             "specialization": d.specialization,
             "department": dept.name if dept else None,
-            "availability": d.availability or {}
+            "availability": d.availability or {},
+            "is_active": user.is_active if user else False
         })
 
     # store full list in cache (TTL default in cache_set)
@@ -166,6 +168,15 @@ def update_doctor(doctor_id):
     if "availability" in data and data.get("availability") is not None and not isinstance(data.get("availability"), dict):
         return jsonify({"msg": "availability must be a JSON object (dict)"}), 400
 
+    # Allow updating the doctor's display name (username)
+    if "username" in data and data.get("username"):
+        user = User.query.get(doc.user_id)
+        if user:
+            existing = User.query.filter(User.username == data["username"], User.id != user.id).first()
+            if existing:
+                return jsonify({"msg": "Username already taken"}), 409
+            user.username = data["username"]
+
     doc.specialization = data.get("specialization", doc.specialization)
     doc.department_id = data.get("department_id", doc.department_id)
     doc.availability = data.get("availability", doc.availability)
@@ -194,30 +205,37 @@ def delete_doctor(doctor_id):
     if not doc:
         return jsonify({"msg": "Doctor not found"}), 404
 
-    # Optionally: check for future appointments and block delete
-    future = Appointment.query.filter(
-        Appointment.doctor_id == doc.id,
-        Appointment.date >= str(date.today())
-    ).first()
-    if future:
-        return jsonify({"msg": "Cannot delete doctor with upcoming appointments"}), 400
-
-    dept_id = doc.department_id
     user = User.query.get(doc.user_id)
-    db.session.delete(doc)
     if user:
-        db.session.delete(user)
+        user.is_active = False
     db.session.commit()
 
     # invalidate caches
     cache_delete("doctors_list")
     cache_delete(f"doctor:{doctor_id}")
-    cache_delete("departments_list")
-    cache_delete("patient_departments")
-    cache_delete(f"dept_doctors:{dept_id}")
-    cache_delete(f"availability:{doctor_id}")
+    cache_delete("admin:dashboard")
 
-    return jsonify({"msg": "Doctor deleted"})
+    return jsonify({"msg": "Doctor blacklisted successfully"})
+
+
+@admin_bp.route("/doctors/<int:doctor_id>/restore", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def restore_doctor(doctor_id):
+    doc = Doctor.query.get(doctor_id)
+    if not doc:
+        return jsonify({"msg": "Doctor not found"}), 404
+
+    user = User.query.get(doc.user_id)
+    if user:
+        user.is_active = True
+    db.session.commit()
+
+    cache_delete("doctors_list")
+    cache_delete(f"doctor:{doctor_id}")
+    cache_delete("admin:dashboard")
+
+    return jsonify({"msg": "Doctor restored successfully"})
 
 @admin_bp.route("/doctors/search", methods=["GET"])
 @jwt_required()
@@ -254,6 +272,7 @@ def search_doctors():
         for d in results
     ])
 
+@admin_bp.route("/doctors/<int:doctor_id>/availability", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
 def set_doctor_availability(doctor_id):
@@ -295,6 +314,11 @@ def get_patients():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
 
+    cache_key = f"admin:patients:p{page}:pp{per_page}"
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+
     q = Patient.query.order_by(Patient.id)
     paged = q.paginate(page=page, per_page=per_page, error_out=False)
 
@@ -303,20 +327,22 @@ def get_patients():
         user = User.query.get(p.user_id)
         data.append({
             "patient_id": p.id,
-            "name": user.username if user else None,
+            "name": user.username if user else "Unknown (User record missing)",
             "age": p.age,
             "gender": p.gender,
             "phone": p.phone,
-            "address": p.address
+            "address": p.address,
+            "is_active": user.is_active if user else False
         })
 
-    return jsonify({
+    result = {
         "items": data,
         "page": page,
         "per_page": per_page,
         "total": paged.total
-    })
-
+    }
+    cache_set(cache_key, result, expire=300)
+    return jsonify(result)
 
 @admin_bp.route("/patients/<int:patient_id>", methods=["GET"])
 @jwt_required()
@@ -328,7 +354,7 @@ def get_patient(patient_id):
     user = User.query.get(p.user_id)
     return jsonify({
         "patient_id": p.id,
-        "name": user.username if user else None,
+        "name": user.username if user else "Unknown (User record missing)",
         "age": p.age,
         "gender": p.gender,
         "phone": p.phone,
@@ -371,20 +397,35 @@ def delete_patient(patient_id):
     if not p:
         return jsonify({"msg": "Patient not found"}), 404
 
-    # Optional: prevent deletion if patient has appointments (soft-delete recommended)
-    future = Appointment.query.filter(
-        Appointment.patient_id == p.id,
-        Appointment.date >= str(date.today())
-    ).first()
-    if future:
-        return jsonify({"msg": "Cannot delete patient with upcoming appointments"}), 400
+    user = User.query.get(p.user_id)
+    if user:
+        user.is_active = False
+    db.session.commit()
+
+    # Invalidate related caches
+    cache_delete("admin:dashboard")
+    cache_delete("admin:patients:p1:pp50")
+
+    return jsonify({"msg": "Patient blacklisted successfully"})
+
+
+@admin_bp.route("/patients/<int:patient_id>/restore", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def restore_patient(patient_id):
+    p = Patient.query.get(patient_id)
+    if not p:
+        return jsonify({"msg": "Patient not found"}), 404
 
     user = User.query.get(p.user_id)
-    db.session.delete(p)
     if user:
-        db.session.delete(user)
+        user.is_active = True
     db.session.commit()
-    return jsonify({"msg": "Patient deleted"})
+
+    cache_delete("admin:dashboard")
+    cache_delete("admin:patients:p1:pp50")
+
+    return jsonify({"msg": "Patient restored successfully"})
 
 
 @admin_bp.route("/patients/search", methods=["GET"])
@@ -436,6 +477,11 @@ def get_all_appointments():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 100))
 
+    cache_key = f"admin:appointments:p{page}:pp{per_page}:d{doctor_id}:pa{patient_id}:dt{date_q}:s{status_q}"
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+
     q = Appointment.query
 
     if doctor_id:
@@ -468,11 +514,41 @@ def get_all_appointments():
             "status": a.status
         })
 
-    return jsonify({
+    result = {
         "items": data,
         "page": page,
         "per_page": per_page,
         "total": paged.total
+    }
+    cache_set(cache_key, result, expire=120)
+    return jsonify(result)
+
+
+@admin_bp.route("/appointments/<int:appt_id>/status", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def admin_update_appointment_status(appt_id):
+    appt = Appointment.query.get(appt_id)
+    if not appt:
+        return jsonify({"msg": "Appointment not found"}), 404
+
+    data = request.get_json() or {}
+    new_status = data.get("status")
+
+    if new_status not in ["Booked", "Completed", "Cancelled"]:
+        return jsonify({"msg": "Invalid status. Must be Booked, Completed, or Cancelled"}), 400
+
+    old_status = appt.status
+    appt.status = new_status
+    db.session.commit()
+
+    # invalidate dashboard and appointment caches
+    cache_delete("admin:dashboard")
+
+    return jsonify({
+        "msg": f"Status updated from {old_status} to {new_status}",
+        "appointment_id": appt.id,
+        "status": new_status
     })
 
 
@@ -482,6 +558,11 @@ def get_all_appointments():
 @jwt_required()
 @role_required("admin")
 def dashboard():
+    cache_key = "admin:dashboard"
+    cached = cache_get(cache_key)
+    if cached:
+        return jsonify(cached)
+
     today = date.today()
     upcoming_cutoff = today + timedelta(days=7)
 
@@ -491,14 +572,16 @@ def dashboard():
         Appointment.date <= str(upcoming_cutoff)
     ).count()
 
-    return jsonify({
+    result = {
         "doctors": Doctor.query.count(),
         "patients": Patient.query.count(),
         "appointments": Appointment.query.count(),
         "departments": Department.query.count(),
         "today_appointments": today_count,
         "upcoming_7days_appointments": upcoming_count
-    })
+    }
+    cache_set(cache_key, result, expire=60)
+    return jsonify(result)
 
 
 #  DEPARTMENT MANAGEMENT

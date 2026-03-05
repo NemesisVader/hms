@@ -24,6 +24,9 @@ def login():
     if not verify_password(user.password, password):
         return jsonify({"msg": "Invalid credentials"}), 401
 
+    if not user.is_active:
+        return jsonify({"msg": "Account has been deactivated. Contact admin."}), 403
+
     access_token = create_access_token(
         identity=str(user.id),
         additional_claims={"role": user.role}

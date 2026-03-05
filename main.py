@@ -6,6 +6,8 @@ if __name__ == "__main__":
     # If user passed "seed" argument
     if len(sys.argv) > 1 and sys.argv[1] == "seed":
         with app.app_context():
+            from backend.extensions import db
+            db.create_all()
             seed_all()  # Seed everything: admin, departments, sample data
         sys.exit(0)
     
