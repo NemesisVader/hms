@@ -11,9 +11,11 @@ const searchQuery = ref("");
 const showAddModal = ref(false);
 const showEditModal = ref(false);
 
-const newDoc = ref({ username: "", password: "", specialization: "", department_id: "", availability: {} });
-const editDoc = ref({ doctor_id: null, username: "", specialization: "", department_id: "", availability: {} });
+const newDoc = ref({ username: "", password: "", specialization: "", department_id: "", email: "", availability: {} });
+const editDoc = ref({ doctor_id: null, username: "", specialization: "", department_id: "", email: "", availability: {} });
 const showNewPassword = ref(false);
+const addError = ref("");
+const editError = ref("");
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -60,42 +62,56 @@ const searchDoctors = async () => {
 };
 
 const addDoctor = async () => {
+  addError.value = "";
+  if (!newDoc.value.username.trim()) { addError.value = "Username is required."; return; }
+  if (!newDoc.value.password) { addError.value = "Password is required."; return; }
+  if (!newDoc.value.email.trim()) { addError.value = "Email is required."; return; }
+  if (!newDoc.value.specialization.trim()) { addError.value = "Specialization is required."; return; }
+  if (!newDoc.value.department_id) { addError.value = "Please select a department."; return; }
   try {
     await api.post("/admin/doctors", newDoc.value);
     showAddModal.value = false;
-    newDoc.value = { username: "", password: "", specialization: "", department_id: "", availability: {} };
+    newDoc.value = { username: "", password: "", specialization: "", department_id: "", email: "", availability: {} };
+    addError.value = "";
     fetchDoctors();
   } catch (e) {
-    alert(e.response?.data?.msg || "Failed to add doctor");
+    addError.value = e.response?.data?.msg || "Failed to add doctor";
   }
 };
 
 const openEdit = (doc) => {
   const dept = departments.value.find(d => d.name === doc.department);
-  // Deep-copy availability so edits don't mutate the table data
   const availCopy = JSON.parse(JSON.stringify(doc.availability || {}));
   editDoc.value = {
     doctor_id: doc.doctor_id,
     username: doc.name || "",
     specialization: doc.specialization,
     department_id: dept ? dept.id : "",
+    email: doc.email || "",
     availability: availCopy
   };
+  editError.value = "";
   showEditModal.value = true;
 };
 
 const updateDoctor = async () => {
+  editError.value = "";
+  if (!editDoc.value.username.trim()) { editError.value = "Name is required."; return; }
+  if (!editDoc.value.specialization.trim()) { editError.value = "Specialization is required."; return; }
+  if (!editDoc.value.department_id) { editError.value = "Please select a department."; return; }
   try {
     await api.put(`/admin/doctors/${editDoc.value.doctor_id}`, {
       username: editDoc.value.username,
       specialization: editDoc.value.specialization,
       department_id: editDoc.value.department_id,
+      email: editDoc.value.email,
       availability: editDoc.value.availability,
     });
     showEditModal.value = false;
+    editError.value = "";
     fetchDoctors();
   } catch (e) {
-    alert(e.response?.data?.msg || "Failed to update");
+    editError.value = e.response?.data?.msg || "Failed to update";
   }
 };
 
@@ -159,6 +175,7 @@ onMounted(() => {
               <th>Name</th>
               <th>Specialization</th>
               <th>Department</th>
+              <th>Email</th>
               <th>Availability</th>
               <th>Status</th>
               <th style="width:200px">Actions</th>
@@ -170,6 +187,7 @@ onMounted(() => {
               <td class="fw-semibold">{{ doc.name }}</td>
               <td>{{ doc.specialization }}</td>
               <td><span class="badge bg-light text-dark border">{{ doc.department }}</span></td>
+              <td style="font-size:0.82rem">{{ doc.email || '—' }}</td>
               <td>
                 <div v-if="doc.availability && Object.keys(doc.availability).length">
                   <span v-for="(times, day) in doc.availability" :key="day" class="slot-chip me-1">
@@ -202,14 +220,15 @@ onMounted(() => {
             <button class="btn-close" @click="showAddModal = false"></button>
           </div>
           <div class="modal-body">
+            <div v-if="addError" class="alert alert-danger py-2 mb-3" style="font-size:0.85rem">{{ addError }}</div>
             <div class="mb-3">
-              <label class="form-label">Username (Login ID)</label>
-              <input v-model="newDoc.username" class="form-control" placeholder="doctor_username" />
+              <label class="form-label fw-semibold">Username (Login ID) <span class="text-danger">*</span></label>
+              <input v-model="newDoc.username" class="form-control" placeholder="doctor_username" required />
             </div>
             <div class="mb-3">
-              <label class="form-label">Password</label>
+              <label class="form-label fw-semibold">Password <span class="text-danger">*</span></label>
               <div class="input-group">
-                <input v-model="newDoc.password" :type="showNewPassword ? 'text' : 'password'" class="form-control" placeholder="Password" />
+                <input v-model="newDoc.password" :type="showNewPassword ? 'text' : 'password'" class="form-control" placeholder="Password" required />
                 <button class="btn btn-outline-secondary" type="button" @click="showNewPassword = !showNewPassword" style="border-color:var(--border);background:#fff">
                   <svg v-if="!showNewPassword" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
                   <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299l.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709z"/><path d="M13.646 14.354l-12-12 .708-.708 12 12-.708.708z"/></svg>
@@ -217,12 +236,16 @@ onMounted(() => {
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label">Specialization</label>
-              <input v-model="newDoc.specialization" class="form-control" placeholder="e.g. Cardiologist" />
+              <label class="form-label fw-semibold">Email <span class="text-danger">*</span></label>
+              <input v-model="newDoc.email" type="email" class="form-control" placeholder="doctor@hospital.com" required />
             </div>
             <div class="mb-3">
-              <label class="form-label">Department</label>
-              <select v-model="newDoc.department_id" class="form-select">
+              <label class="form-label fw-semibold">Specialization <span class="text-danger">*</span></label>
+              <input v-model="newDoc.specialization" class="form-control" placeholder="e.g. Cardiologist" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+              <select v-model="newDoc.department_id" class="form-select" required>
                 <option value="" disabled>Select department</option>
                 <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
               </select>
@@ -261,17 +284,22 @@ onMounted(() => {
             <button class="btn-close" @click="showEditModal = false"></button>
           </div>
           <div class="modal-body">
+            <div v-if="editError" class="alert alert-danger py-2 mb-3" style="font-size:0.85rem">{{ editError }}</div>
             <div class="mb-3">
-              <label class="form-label">Name</label>
-              <input v-model="editDoc.username" class="form-control" placeholder="Doctor name" />
+              <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+              <input v-model="editDoc.username" class="form-control" placeholder="Doctor name" required />
             </div>
             <div class="mb-3">
-              <label class="form-label">Specialization</label>
-              <input v-model="editDoc.specialization" class="form-control" />
+              <label class="form-label fw-semibold">Email</label>
+              <input v-model="editDoc.email" type="email" class="form-control" placeholder="doctor@hospital.com" />
             </div>
             <div class="mb-3">
-              <label class="form-label">Department</label>
-              <select v-model="editDoc.department_id" class="form-select">
+              <label class="form-label fw-semibold">Specialization <span class="text-danger">*</span></label>
+              <input v-model="editDoc.specialization" class="form-control" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+              <select v-model="editDoc.department_id" class="form-select" required>
                 <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
               </select>
             </div>

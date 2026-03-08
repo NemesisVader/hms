@@ -55,7 +55,9 @@ const openReschedule = async (appt) => {
 const allSlotsForDay = computed(() => {
   if (!rescheduleForm.value.date || !doctorAvailability.value) return [];
   try {
-    const dt = new Date(rescheduleForm.value.date);
+    // Parse as local date (avoid UTC midnight → wrong day in IST)
+    const [y, m, d] = rescheduleForm.value.date.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const dayName = dayNames[dt.getDay()];
     return doctorAvailability.value[dayName] || [];

@@ -27,12 +27,33 @@ const register = async () => {
     error.value = "Username and password are required";
     return;
   }
+  if (form.value.username.trim().length < 3) {
+    error.value = "Username must be at least 3 characters";
+    return;
+  }
+  if (form.value.password.length < 6) {
+    error.value = "Password must be at least 6 characters";
+    return;
+  }
   if (form.value.password !== form.value.confirmPassword) {
     error.value = "Passwords do not match";
     return;
   }
   if (!form.value.age || !form.value.gender) {
     error.value = "Age and gender are required";
+    return;
+  }
+  const ageNum = parseInt(form.value.age);
+  if (isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
+    error.value = "Age must be a number between 1 and 120";
+    return;
+  }
+  if (!form.value.phone || !form.value.phone.trim()) {
+    error.value = "Phone number is required";
+    return;
+  }
+  if (!/^[0-9+\-\s]{7,15}$/.test(form.value.phone.trim())) {
+    error.value = "Enter a valid phone number (7–15 digits)";
     return;
   }
 
@@ -67,14 +88,14 @@ const register = async () => {
 
       <div class="row g-3">
         <div class="col-12">
-          <label class="form-label">Username</label>
-          <input v-model="form.username" class="form-control" placeholder="Choose a username" />
+          <label class="form-label">Username <span class="text-danger">*</span></label>
+          <input v-model="form.username" class="form-control" placeholder="Choose a username (min 3 chars)" required minlength="3" />
         </div>
 
         <div class="col-6">
           <label class="form-label">Password</label>
           <div class="input-group">
-            <input v-model="form.password" :type="showPassword ? 'text' : 'password'" class="form-control" placeholder="Password" />
+            <input v-model="form.password" :type="showPassword ? 'text' : 'password'" class="form-control" placeholder="Password (min 6 chars)" required minlength="6" />
             <button class="btn btn-outline-secondary" type="button" @click="showPassword = !showPassword" style="border-color:var(--border);background:#fff">
               <svg v-if="!showPassword" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299l.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709z"/><path d="M13.646 14.354l-12-12 .708-.708 12 12-.708.708z"/></svg>
@@ -84,7 +105,7 @@ const register = async () => {
         <div class="col-6">
           <label class="form-label">Confirm Password</label>
           <div class="input-group">
-            <input v-model="form.confirmPassword" :type="showConfirm ? 'text' : 'password'" class="form-control" placeholder="Confirm" />
+            <input v-model="form.confirmPassword" :type="showConfirm ? 'text' : 'password'" class="form-control" placeholder="Confirm" required />
             <button class="btn btn-outline-secondary" type="button" @click="showConfirm = !showConfirm" style="border-color:var(--border);background:#fff">
               <svg v-if="!showConfirm" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/><path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/></svg>
               <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299l.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709z"/><path d="M13.646 14.354l-12-12 .708-.708 12 12-.708.708z"/></svg>
@@ -93,12 +114,12 @@ const register = async () => {
         </div>
 
         <div class="col-6">
-          <label class="form-label">Age</label>
-          <input v-model="form.age" type="number" class="form-control" placeholder="Age" min="1" max="150" />
+          <label class="form-label">Age <span class="text-danger">*</span></label>
+          <input v-model="form.age" type="number" class="form-control" placeholder="Age" min="1" max="120" required />
         </div>
         <div class="col-6">
-          <label class="form-label">Gender</label>
-          <select v-model="form.gender" class="form-select">
+          <label class="form-label">Gender <span class="text-danger">*</span></label>
+          <select v-model="form.gender" class="form-select" required>
             <option value="" disabled>Select</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
@@ -107,8 +128,8 @@ const register = async () => {
         </div>
 
         <div class="col-12">
-          <label class="form-label">Phone</label>
-          <input v-model="form.phone" class="form-control" placeholder="Phone number" />
+          <label class="form-label">Phone <span class="text-danger">*</span></label>
+          <input v-model="form.phone" type="tel" class="form-control" placeholder="e.g. 9876543210" required pattern="[0-9+\-\s]{7,15}" />
         </div>
 
         <div class="col-12">

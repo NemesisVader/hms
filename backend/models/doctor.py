@@ -10,5 +10,6 @@ class Doctor(db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"), nullable=False)
     specialization = db.Column(db.String(120), nullable=False)
     availability = db.Column(db.JSON, nullable=True)
+    email = db.Column(db.String(200), nullable=True)
 
     user = relationship("User", backref="doctor", uselist=False)

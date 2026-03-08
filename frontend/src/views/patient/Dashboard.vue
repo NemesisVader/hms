@@ -115,8 +115,16 @@ const openBook = async (doc) => {
 
 const bookAppointment = async () => {
   bookError.value = "";
-  if (!bookForm.value.date || !bookForm.value.time) {
-    bookError.value = "Date and time are required";
+  if (!bookForm.value.date) {
+    bookError.value = "Please select a date";
+    return;
+  }
+  if (allSlotsForDay().length === 0) {
+    bookError.value = "Doctor is on leave on the selected day. Please pick another date.";
+    return;
+  }
+  if (!bookForm.value.time) {
+    bookError.value = "Please select a time slot";
     return;
   }
   try {
@@ -141,7 +149,9 @@ const bookAppointment = async () => {
 const allSlotsForDay = () => {
   if (!bookForm.value.date || !doctorAvailability.value) return [];
   try {
-    const dt = new Date(bookForm.value.date);
+    // Parse as local date (avoid UTC midnight → wrong day in IST)
+    const [y, m, d] = bookForm.value.date.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const dayName = dayNames[dt.getDay()];
     return doctorAvailability.value[dayName] || [];

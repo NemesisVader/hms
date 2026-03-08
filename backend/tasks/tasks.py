@@ -199,7 +199,7 @@ def send_monthly_reports():
             with open(report_filename, "w", encoding="utf-8") as f:
                 f.write(html_report)
 
-            doctor_email = os.getenv(f"DOCTOR_{doc.id}_EMAIL", f"{doc_user.username}@hospital.com")
+            doctor_email = doc.email or f"{doc_user.username}@hospital.com"
 
             email_sent = send_email_with_html(
                 to_email=doctor_email,

@@ -28,9 +28,13 @@ def add_doctor():
     specialization = data.get("specialization")
     department_id = data.get("department_id")
     availability = data.get("availability", {})
+    email = data.get("email", "").strip()
 
     if not username or not password or not specialization or not department_id:
         return jsonify({"msg": "username, password, specialization and department_id are required"}), 400
+
+    if not email:
+        return jsonify({"msg": "email is required"}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({"msg": "Username already exists"}), 409
@@ -51,7 +55,8 @@ def add_doctor():
         user_id=user.id,
         specialization=specialization,
         department_id=department_id,
-        availability=availability or {}
+        availability=availability or {},
+        email=email or None
     )
 
     db.session.add(doctor)
@@ -99,7 +104,8 @@ def get_doctors():
             "specialization": d.specialization,
             "department": dept.name if dept else None,
             "availability": d.availability or {},
-            "is_active": user.is_active if user else False
+            "is_active": user.is_active if user else False,
+            "email": d.email or ""
         })
 
     cache_set(cache_key, data)
@@ -135,7 +141,8 @@ def get_doctor(doctor_id):
         "name": user.username if user else None,
         "specialization": d.specialization,
         "department": dept.name if dept else None,
-        "availability": d.availability or {}
+        "availability": d.availability or {},
+        "email": d.email or ""
     }
 
     cache_set(cache_key, payload)
@@ -170,6 +177,8 @@ def update_doctor(doctor_id):
     doc.specialization = data.get("specialization", doc.specialization)
     doc.department_id = data.get("department_id", doc.department_id)
     doc.availability = data.get("availability", doc.availability)
+    if "email" in data:
+        doc.email = data["email"].strip() or None
 
     db.session.commit()
 

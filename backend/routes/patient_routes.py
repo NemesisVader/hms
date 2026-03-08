@@ -30,8 +30,15 @@ def is_slot_in_availability(availability: dict, appt_date: str, appt_time: str) 
     except Exception:
         return False
 
-    weekday = dt.strftime("%a")
-    slots = availability.get(weekday, []) or availability.get(weekday[:3], [])
+    short_day = dt.strftime("%a")          # e.g. "Mon"
+    full_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    full_day = full_days[dt.weekday()]     # e.g. "Monday"
+
+    slots = (
+        availability.get(short_day)
+        or availability.get(full_day)
+        or []
+    )
     return appt_time in slots
 
 
@@ -405,6 +412,9 @@ def reschedule_appointment(appt_id):
         return jsonify({"msg": "Cannot reschedule to a past time"}), 400
 
     doc = Doctor.query.get(appt.doctor_id)
+    if not doc:
+        return jsonify({"msg": "Doctor not found"}), 404
+
     if doc.availability and not is_slot_in_availability(doc.availability, new_date, new_time):
         return jsonify({"msg": "Selected slot not in doctor's availability"}), 400
 
@@ -419,18 +429,17 @@ def reschedule_appointment(appt_id):
     appt.status = "Booked"
     db.session.commit()
 
-    from ..utils.notifications import send_google_chat_message
-    from ..models.user import User
-    from ..models.doctor import Doctor
-
-    u = User.query.get(patient.user_id)
-    doc_u = User.query.get(doc.user_id) if doc else None
-
-    msg = f"*Appointment Rescheduled*\n" \
-          f"Patient: *{u.username if u else 'Unknown'}*\n" \
-          f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
-          f"New Date: {new_date} at {new_time}"
-    send_google_chat_message(msg)
+    try:
+        from ..utils.notifications import send_google_chat_message
+        u = User.query.get(patient.user_id)
+        doc_u = User.query.get(doc.user_id) if doc else None
+        msg = f"*Appointment Rescheduled*\n" \
+              f"Patient: *{u.username if u else 'Unknown'}*\n" \
+              f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
+              f"New Date: {new_date} at {new_time}"
+        send_google_chat_message(msg)
+    except Exception as e:
+        print(f"[WARN] Reschedule notification failed: {e}")
 
     return jsonify({"msg": "Appointment rescheduled", "appointment_id": appt.id})
 
