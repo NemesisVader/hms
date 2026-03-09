@@ -1,5 +1,5 @@
 <template>
-  <div class="d-flex">
+  <div class="d-flex" style="height: 100vh; overflow: hidden;">
     <div class="sidebar p-0" style="width: 220px;">
       <div class="sidebar-brand">HMS Doctor</div>
 
@@ -15,13 +15,13 @@
       </div>
     </div>
 
-    <div class="flex-fill" style="min-width:0">
+    <div class="flex-fill d-flex flex-column" style="min-width:0; overflow: hidden;">
       <div class="top-header">
         <h5>{{ pageTitle }}</h5>
         <span class="text-muted" style="font-size:0.82rem">Dr. {{ username }}</span>
       </div>
 
-      <div class="content-area">
+      <div class="content-area flex-fill" style="overflow-y: auto;">
         <router-view />
       </div>
     </div>

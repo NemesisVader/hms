@@ -24,6 +24,7 @@ def add_doctor():
     data = request.get_json() or {}
 
     username = data.get("username")
+    name = data.get("name")
     password = data.get("password")
     specialization = data.get("specialization")
     department_id = data.get("department_id")
@@ -44,7 +45,7 @@ def add_doctor():
         return jsonify({"msg": "department_id is invalid"}), 400
 
     hashed_pw = generate_password_hash(password)
-    user = User(username=username, password=hashed_pw, role="doctor")
+    user = User(username=username, name=name, password=hashed_pw, role="doctor")
     db.session.add(user)
     db.session.flush()
 
@@ -100,7 +101,8 @@ def get_doctors():
         dept = Department.query.get(d.department_id)
         data.append({
             "doctor_id": d.id,
-            "name": user.username if user else None,
+            "name": user.name or user.username if user else None,
+            "username": user.username if user else None,
             "specialization": d.specialization,
             "department": dept.name if dept else None,
             "availability": d.availability or {},
@@ -138,7 +140,8 @@ def get_doctor(doctor_id):
     dept = Department.query.get(d.department_id)
     payload = {
         "doctor_id": d.id,
-        "name": user.username if user else None,
+        "name": user.name or user.username if user else None,
+        "username": user.username if user else None,
         "specialization": d.specialization,
         "department": dept.name if dept else None,
         "availability": d.availability or {},
@@ -173,6 +176,11 @@ def update_doctor(doctor_id):
             if existing:
                 return jsonify({"msg": "Username already taken"}), 409
             user.username = data["username"]
+        
+    if "name" in data and data.get("name"):
+        user = User.query.get(doc.user_id)
+        if user:
+            user.name = data["name"]
 
     doc.specialization = data.get("specialization", doc.specialization)
     doc.department_id = data.get("department_id", doc.department_id)
@@ -260,7 +268,8 @@ def search_doctors():
     return jsonify([
         {
             "doctor_id": d.id,
-            "name": d.user.username,
+            "name": d.user.name or d.user.username,
+            "username": d.user.username,
             "specialization": d.specialization,
             "department": d.department.name if d.department else None,
             "availability": d.availability or {}
@@ -320,7 +329,8 @@ def get_patients():
         user = User.query.get(p.user_id)
         data.append({
             "patient_id": p.id,
-            "name": user.username if user else "Unknown (User record missing)",
+            "name": user.name or user.username if user else "Unknown (User record missing)",
+            "username": user.username if user else None,
             "age": p.age,
             "gender": p.gender,
             "phone": p.phone,
@@ -348,7 +358,8 @@ def get_patient(patient_id):
     user = User.query.get(p.user_id)
     return jsonify({
         "patient_id": p.id,
-        "name": user.username if user else "Unknown (User record missing)",
+        "name": user.name or user.username if user else "Unknown (User record missing)",
+        "username": user.username if user else None,
         "age": p.age,
         "gender": p.gender,
         "phone": p.phone,
@@ -376,6 +387,11 @@ def update_patient(patient_id):
             if User.query.filter(User.username == data.get("username"), User.id != u.id).first():
                 return jsonify({"msg": "username already taken"}), 409
             u.username = data.get("username")
+    
+    if data.get("name"):
+        u = User.query.get(p.user_id)
+        if u:
+            u.name = data.get("name")
 
     db.session.commit()
     return jsonify({"msg": "Patient updated"})
@@ -443,7 +459,8 @@ def search_patients():
     for p in results:
         output.append({
             "patient_id": p.id,
-            "name": p.user.username if p.user else None,
+            "name": p.user.name or p.user.username if p.user else None,
+            "username": p.user.username if p.user else None,
             "age": p.age,
             "gender": p.gender,
             "phone": p.phone,
@@ -614,7 +631,8 @@ def get_departments():
             user = User.query.get(doc.user_id)
             doctors_data.append({
                 "doctor_id": doc.id,
-                "name": user.username if user else None,
+                "name": user.name or user.username if user else None,
+                "username": user.username if user else None,
                 "specialization": doc.specialization,
                 "availability": doc.availability or {}
             })
@@ -667,7 +685,8 @@ def get_department(dept_id):
         user = User.query.get(doc.user_id)
         doctors_data.append({
             "doctor_id": doc.id,
-            "name": user.username if user else None,
+            "name": user.name or user.username if user else None,
+            "username": user.username if user else None,
             "specialization": doc.specialization,
             "availability": doc.availability or {}
         })

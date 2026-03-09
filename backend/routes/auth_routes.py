@@ -38,6 +38,7 @@ def login():
         "user": {
             "id": user.id,
             "username": user.username,
+            "name": user.name or user.username,
             "role": user.role
         }
     })
@@ -47,6 +48,7 @@ def login():
 def register():
     data = request.get_json() or {}
     username = data.get("username")
+    name = data.get("name")
     password = data.get("password")
     age = data.get("age")
     gender = data.get("gender")
@@ -60,7 +62,7 @@ def register():
         return jsonify({"msg": "username already exists"}), 409
 
     hashed = hash_password(password)
-    user = User(username=username, password=hashed, role="patient")
+    user = User(username=username, name=name, password=hashed, role="patient")
     db.session.add(user)
     db.session.flush()
 
@@ -79,4 +81,4 @@ def me():
     user = User.query.get(int(user_id))
     if not user:
         return jsonify({"msg": "Not found"}), 404
-    return jsonify({"id": user.id, "username": user.username, "role": claims.get("role")})
+    return jsonify({"id": user.id, "username": user.username, "name": user.name or user.username, "role": claims.get("role")})

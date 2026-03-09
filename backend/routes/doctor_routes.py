@@ -94,7 +94,8 @@ def doctor_today():
         data.append({
             "appointment_id": a.id,
             "patient_id": patient.id,
-            "patient": user.username if user else "Unknown (User record missing)",
+            "patient": user.name or user.username if user else "Unknown (User record missing)",
+            "username": user.username if user else None,
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -138,7 +139,8 @@ def doctor_week():
         data.append({
             "appointment_id": a.id,
             "patient_id": patient.id,
-            "patient": user.username if user else "Unknown (User record missing)",
+            "patient": user.name or user.username if user else "Unknown (User record missing)",
+            "username": user.username if user else None,
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -177,7 +179,8 @@ def doctor_all():
         data.append({
             "appointment_id": a.id,
             "patient_id": patient.id,
-            "patient": user.username if user else "Unknown (User record missing)",
+            "patient": user.name or user.username if user else "Unknown (User record missing)",
+            "username": user.username if user else None,
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -214,8 +217,9 @@ def doctor_update_status(appt_id):
     patient = Patient.query.get(appt.patient_id)
     if patient:
         p_user = User.query.get(patient.user_id)
+        patient_display_name = p_user.name or p_user.username if p_user else 'Patient'
         msg = f"*Appointment Update*\n" \
-              f"Hello *{p_user.username if p_user else 'Patient'}*,\n" \
+              f"Hello *{patient_display_name}*,\n" \
               f"Your appointment with Dr. *{doctor.user.username}* has been marked as *{new_status}*."
         send_google_chat_message(msg)
 
@@ -263,7 +267,8 @@ def patient_history(patient_id):
         })
 
     user = User.query.get(patient.user_id) if patient else None
-    patient_name = user.username if user else "Unknown"
+    patient_name = user.name or user.username if user else "Unknown"
+    patient_username = user.username if user else None
 
     return jsonify({
         "patient": {
@@ -326,8 +331,9 @@ def add_treatment(appt_id):
     patient = Patient.query.get(appt.patient_id)
     if patient:
         p_user = User.query.get(patient.user_id)
+        patient_display_name = p_user.name or p_user.username if p_user else 'Patient'
         msg = f"*New Treatment Record Added*\n" \
-              f"Hello *{p_user.username if p_user else 'Patient'}*,\n" \
+              f"Hello *{patient_display_name}*,\n" \
               f"Dr. *{doctor.user.username}* has added a treatment record for your appointment on {appt.date}.\n" \
               f"Diagnosis: *{diagnosis}*.\n" \
               f"Please check your portal for full details."
@@ -402,7 +408,8 @@ def get_doctor_patients():
             user = User.query.get(patient.user_id)
             patients_data.append({
                 "patient_id": patient.id,
-                "name": user.username if user else "Unknown",
+                "name": user.name or user.username if user else "Unknown",
+                "username": user.username if user else None,
                 "age": patient.age,
                 "gender": patient.gender,
                 "phone": patient.phone

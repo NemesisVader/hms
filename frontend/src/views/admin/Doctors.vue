@@ -11,8 +11,8 @@ const searchQuery = ref("");
 const showAddModal = ref(false);
 const showEditModal = ref(false);
 
-const newDoc = ref({ username: "", password: "", specialization: "", department_id: "", email: "", availability: {} });
-const editDoc = ref({ doctor_id: null, username: "", specialization: "", department_id: "", email: "", availability: {} });
+const newDoc = ref({ name: "", username: "", password: "", specialization: "", department_id: "", email: "", availability: {} });
+const editDoc = ref({ doctor_id: null, name: "", username: "", specialization: "", department_id: "", email: "", availability: {} });
 const showNewPassword = ref(false);
 const addError = ref("");
 const editError = ref("");
@@ -63,6 +63,7 @@ const searchDoctors = async () => {
 
 const addDoctor = async () => {
   addError.value = "";
+  if (!newDoc.value.name.trim()) { addError.value = "Name is required."; return; }
   if (!newDoc.value.username.trim()) { addError.value = "Username is required."; return; }
   if (!newDoc.value.password) { addError.value = "Password is required."; return; }
   if (!newDoc.value.email.trim()) { addError.value = "Email is required."; return; }
@@ -71,7 +72,7 @@ const addDoctor = async () => {
   try {
     await api.post("/admin/doctors", newDoc.value);
     showAddModal.value = false;
-    newDoc.value = { username: "", password: "", specialization: "", department_id: "", email: "", availability: {} };
+    newDoc.value = { name: "", username: "", password: "", specialization: "", department_id: "", email: "", availability: {} };
     addError.value = "";
     fetchDoctors();
   } catch (e) {
@@ -84,7 +85,8 @@ const openEdit = (doc) => {
   const availCopy = JSON.parse(JSON.stringify(doc.availability || {}));
   editDoc.value = {
     doctor_id: doc.doctor_id,
-    username: doc.name || "",
+    name: doc.name || "",
+    username: doc.username || "",
     specialization: doc.specialization,
     department_id: dept ? dept.id : "",
     email: doc.email || "",
@@ -96,11 +98,13 @@ const openEdit = (doc) => {
 
 const updateDoctor = async () => {
   editError.value = "";
-  if (!editDoc.value.username.trim()) { editError.value = "Name is required."; return; }
+  if (!editDoc.value.name.trim()) { editError.value = "Name is required."; return; }
+  if (!editDoc.value.username.trim()) { editError.value = "Username is required."; return; }
   if (!editDoc.value.specialization.trim()) { editError.value = "Specialization is required."; return; }
   if (!editDoc.value.department_id) { editError.value = "Please select a department."; return; }
   try {
     await api.put(`/admin/doctors/${editDoc.value.doctor_id}`, {
+      name: editDoc.value.name,
       username: editDoc.value.username,
       specialization: editDoc.value.specialization,
       department_id: editDoc.value.department_id,
@@ -222,6 +226,10 @@ onMounted(() => {
           <div class="modal-body">
             <div v-if="addError" class="alert alert-danger py-2 mb-3" style="font-size:0.85rem">{{ addError }}</div>
             <div class="mb-3">
+              <label class="form-label fw-semibold">Doctor Name <span class="text-danger">*</span></label>
+              <input v-model="newDoc.name" class="form-control" placeholder="Dr. Parth" required />
+            </div>
+            <div class="mb-3">
               <label class="form-label fw-semibold">Username (Login ID) <span class="text-danger">*</span></label>
               <input v-model="newDoc.username" class="form-control" placeholder="doctor_username" required />
             </div>
@@ -286,8 +294,12 @@ onMounted(() => {
           <div class="modal-body">
             <div v-if="editError" class="alert alert-danger py-2 mb-3" style="font-size:0.85rem">{{ editError }}</div>
             <div class="mb-3">
-              <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
-              <input v-model="editDoc.username" class="form-control" placeholder="Doctor name" required />
+              <label class="form-label fw-semibold">Full Name <span class="text-danger">*</span></label>
+              <input v-model="editDoc.name" class="form-control" placeholder="Doctor name" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Username (Login ID) <span class="text-danger">*</span></label>
+              <input v-model="editDoc.username" class="form-control" placeholder="doctor_username" required />
             </div>
             <div class="mb-3">
               <label class="form-label fw-semibold">Email</label>

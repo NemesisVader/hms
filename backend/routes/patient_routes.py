@@ -69,6 +69,7 @@ def patient_me():
     return jsonify({
         "id": patient.id,
         "username": user.username,
+        "name": user.name or user.username,
         "age": patient.age,
         "gender": patient.gender,
         "phone": patient.phone,
@@ -96,6 +97,9 @@ def update_profile():
         if User.query.filter(User.username == data.get("username"), User.id != user_id).first():
             return jsonify({"msg": "username already taken"}), 409
         user.username = data.get("username")
+
+    if data.get("name"):
+        user.name = data.get("name")
 
     db.session.commit()
     return jsonify({"msg": "Profile updated"})
@@ -131,25 +135,27 @@ def next_visits():
         if not treat.next_visit or not treat.next_visit.strip():
             continue
 
+        # Look for any future appointment with this doctor (on or after today),
+        # not the original appointment that triggered the treatment record.
         followup_appt = Appointment.query.filter(
             Appointment.patient_id == patient.id,
             Appointment.doctor_id == doc.id,
-            Appointment.date >= treat.next_visit,
+            Appointment.date >= today_str,
             Appointment.id != appt.id,
         ).order_by(Appointment.date.desc()).first()
 
         item = {
             "next_visit": treat.next_visit,
-            "doctor_name": doc_user.username,
+            "doctor_name": doc_user.name or doc_user.username,
             "doctor_id": doc.id,
             "specialization": doc.specialization,
             "diagnosis": treat.diagnosis,
             "original_date": appt.date,
         }
 
+        # Only hide the reminder if a real Booked/Completed follow-up exists.
+        # A Cancelled appointment means the patient still needs to rebook.
         if followup_appt and followup_appt.status in ("Booked", "Completed"):
-            continue
-        elif followup_appt and followup_appt.status == "Cancelled":
             continue
         else:
             item["status"] = "pending"
@@ -219,7 +225,8 @@ def doctors_by_department(dept_id):
         user = User.query.get(doc.user_id)
         out.append({
             "doctor_id": doc.id,
-            "name": user.username if user else "Unknown (User record missing)",
+            "name": user.name or user.username if user else "Unknown (User record missing)",
+            "username": user.username if user else None,
             "specialization": doc.specialization,
             "availability": doc.availability or {}
         })
@@ -274,7 +281,8 @@ def search_doctors():
         dept = Department.query.get(doc.department_id) if doc.department_id else None
         out.append({
             "doctor_id": doc.id,
-            "name": user.username,
+            "name": user.name or user.username,
+            "username": user.username,
             "specialization": doc.specialization,
             "department": dept.name if dept else None,
             "availability": doc.availability or {},
@@ -338,10 +346,11 @@ def book_appointment():
         from ..utils.notifications import send_google_chat_message
         patient_user = User.query.get(patient.user_id)
         doc_user = User.query.get(doc.user_id)
+        doctor_display_name = doc_user.name or doc_user.username if doc_user else 'your doctor'
         send_google_chat_message(
             f"*Appointment Booked - Today!*\n"
             f"Hello *{patient_user.username if patient_user else 'Patient'}*,\n"
-            f"Your appointment with *Dr. {doc_user.username if doc_user else 'your doctor'}* "
+            f"Your appointment with *Dr. {doctor_display_name}* "
             f"is confirmed for today at *{appt_time}*.\n"
             f"Please reach the hospital on time."
         )
@@ -374,7 +383,7 @@ def cancel_appointment(appt_id):
 
     msg = f"*Appointment Cancelled*\n" \
           f"Patient: *{u.username if u else 'Unknown'}*\n" \
-          f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
+          f"Doctor: *{doc_u.name or doc_u.username if doc_u else 'Unknown'}*\n" \
           f"Date: {appt.date} at {appt.time}"
     send_google_chat_message(msg)
 
@@ -433,9 +442,10 @@ def reschedule_appointment(appt_id):
         from ..utils.notifications import send_google_chat_message
         u = User.query.get(patient.user_id)
         doc_u = User.query.get(doc.user_id) if doc else None
+        doctor_display_name = doc_u.name or doc_u.username if doc_u else 'Unknown'
         msg = f"*Appointment Rescheduled*\n" \
               f"Patient: *{u.username if u else 'Unknown'}*\n" \
-              f"Doctor: *{doc_u.username if doc_u else 'Unknown'}*\n" \
+              f"Doctor: *{doctor_display_name}*\n" \
               f"New Date: {new_date} at {new_time}"
         send_google_chat_message(msg)
     except Exception as e:
@@ -455,7 +465,8 @@ def upcoming_appointments():
     today_str = str(date.today())
     appts = Appointment.query.filter(
         Appointment.patient_id == patient.id,
-        Appointment.date >= today_str
+        Appointment.date >= today_str,
+        Appointment.status == "Booked"
     ).order_by(Appointment.date.asc(), Appointment.time.asc()).all()
 
     out = []
@@ -465,7 +476,7 @@ def upcoming_appointments():
         out.append({
             "appointment_id": a.id,
             "doctor_id": doc.id if doc else None,
-            "doctor_name": user.username if user else None,
+            "doctor_name": user.name or user.username if user else None,
             "date": a.date,
             "time": a.time,
             "status": a.status
@@ -496,7 +507,7 @@ def appointment_history():
         treatment = Treatment.query.filter_by(appointment_id=a.id).first()
         out.append({
             "appointment_id": a.id,
-            "doctor": user.username if user else None,
+            "doctor": user.name or user.username if user else None,
             "date": a.date,
             "time": a.time,
             "status": a.status,

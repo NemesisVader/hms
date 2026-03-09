@@ -9,7 +9,7 @@ const searchQuery = ref("");
 const showEditModal = ref(false);
 const showAddModal = ref(false);
 const editPat = ref({});
-const newPat = ref({ username: "", password: "", age: "", gender: "", phone: "", address: "" });
+const newPat = ref({ name: "", username: "", password: "", age: "", gender: "", phone: "", address: "" });
 const showNewPassword = ref(false);
 
 const fetchPatients = async () => {
@@ -36,6 +36,7 @@ const searchPatients = async () => {
 const addPatient = async () => {
   try {
     await api.post("/auth/register", {
+      name: newPat.value.name,
       username: newPat.value.username,
       password: newPat.value.password,
       age: parseInt(newPat.value.age),
@@ -44,7 +45,7 @@ const addPatient = async () => {
       address: newPat.value.address,
     });
     showAddModal.value = false;
-    newPat.value = { username: "", password: "", age: "", gender: "", phone: "", address: "" };
+    newPat.value = { name: "", username: "", password: "", age: "", gender: "", phone: "", address: "" };
     fetchPatients();
   } catch (e) {
     alert(e.response?.data?.msg || "Failed to add patient");
@@ -59,7 +60,8 @@ const openEdit = (p) => {
 const updatePatient = async () => {
   try {
     await api.put("/admin/patients/" + editPat.value.patient_id, {
-      username: editPat.value.name,
+      name: editPat.value.name,
+      username: editPat.value.username,
       age: editPat.value.age,
       gender: editPat.value.gender,
       phone: editPat.value.phone,
@@ -168,11 +170,15 @@ onMounted(fetchPatients);
           </div>
           <div class="modal-body">
             <div class="mb-3">
-              <label class="form-label">Username (Login ID)</label>
+              <label class="form-label">Full Name <span class="text-danger">*</span></label>
+              <input v-model="newPat.name" class="form-control" placeholder="John Doe" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Username (Login ID) <span class="text-danger">*</span></label>
               <input v-model="newPat.username" class="form-control" placeholder="patient_username" />
             </div>
             <div class="mb-3">
-              <label class="form-label">Password</label>
+              <label class="form-label">Password <span class="text-danger">*</span></label>
               <div class="input-group">
                 <input v-model="newPat.password" :type="showNewPassword ? 'text' : 'password'" class="form-control" placeholder="Password" />
                 <button class="btn btn-outline-secondary" type="button" @click="showNewPassword = !showNewPassword" style="border-color:var(--border);background:#fff">
@@ -223,8 +229,12 @@ onMounted(fetchPatients);
           </div>
           <div class="modal-body">
             <div class="mb-3">
-              <label class="form-label">Name</label>
+              <label class="form-label">Full Name <span class="text-danger">*</span></label>
               <input v-model="editPat.name" class="form-control" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Username (Login ID)</label>
+              <input v-model="editPat.username" class="form-control" />
             </div>
             <div class="row g-3 mb-3">
               <div class="col-6">

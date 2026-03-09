@@ -6,6 +6,7 @@ import api from "../../api/axios";
 const router = useRouter();
 
 const form = ref({
+  name: "",
   username: "",
   password: "",
   confirmPassword: "",
@@ -23,6 +24,10 @@ const showConfirm = ref(false);
 const register = async () => {
   error.value = null;
 
+  if (!form.value.name || !form.value.name.trim()) {
+    error.value = "Full name is required";
+    return;
+  }
   if (!form.value.username || !form.value.password) {
     error.value = "Username and password are required";
     return;
@@ -60,6 +65,7 @@ const register = async () => {
   loading.value = true;
   try {
     await api.post("/auth/register", {
+      name: form.value.name,
       username: form.value.username,
       password: form.value.password,
       age: parseInt(form.value.age),
@@ -88,12 +94,17 @@ const register = async () => {
 
       <div class="row g-3">
         <div class="col-12">
+          <label class="form-label">Full Name <span class="text-danger">*</span></label>
+          <input v-model="form.name" class="form-control" placeholder="Enter your full name" required />
+        </div>
+
+        <div class="col-12">
           <label class="form-label">Username <span class="text-danger">*</span></label>
           <input v-model="form.username" class="form-control" placeholder="Choose a username (min 3 chars)" required minlength="3" />
         </div>
 
         <div class="col-6">
-          <label class="form-label">Password</label>
+          <label class="form-label">Password <span class="text-danger">*</span></label>
           <div class="input-group">
             <input v-model="form.password" :type="showPassword ? 'text' : 'password'" class="form-control" placeholder="Password (min 6 chars)" required minlength="6" />
             <button class="btn btn-outline-secondary" type="button" @click="showPassword = !showPassword" style="border-color:var(--border);background:#fff">
@@ -103,7 +114,7 @@ const register = async () => {
           </div>
         </div>
         <div class="col-6">
-          <label class="form-label">Confirm Password</label>
+          <label class="form-label">Confirm Password <span class="text-danger">*</span></label>
           <div class="input-group">
             <input v-model="form.confirmPassword" :type="showConfirm ? 'text' : 'password'" class="form-control" placeholder="Confirm" required />
             <button class="btn btn-outline-secondary" type="button" @click="showConfirm = !showConfirm" style="border-color:var(--border);background:#fff">
